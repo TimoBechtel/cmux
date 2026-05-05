@@ -89,6 +89,7 @@ final class CmuxSettingsFileStore {
         "automation.portRange",
         "browser.defaultSearchEngine",
         "browser.showSearchSuggestions",
+        "browser.engine",
         "browser.theme",
         "browser.openTerminalLinksInCmuxBrowser",
         "browser.interceptTerminalOpenCommandInCmuxBrowser",
@@ -762,6 +763,13 @@ final class CmuxSettingsFileStore {
         if let value = jsonBool(section["showSearchSuggestions"]) {
             snapshot.managedUserDefaults[BrowserSearchSettings.searchSuggestionsEnabledKey] = .bool(value)
         }
+        if let raw = jsonString(section["engine"]) {
+            guard let engine = BrowserEngine(rawValue: raw) else {
+                logInvalid("browser.engine", sourcePath: sourcePath)
+                return
+            }
+            snapshot.managedUserDefaults[BrowserEngineSettings.engineKey] = .string(engine.rawValue)
+        }
         if let raw = jsonString(section["theme"]) {
             guard let mode = BrowserThemeMode(rawValue: raw) else {
                 logInvalid("browser.theme", sourcePath: sourcePath)
@@ -1324,6 +1332,7 @@ final class CmuxSettingsFileStore {
                 "browser": [
                     "defaultSearchEngine": BrowserSearchSettings.defaultSearchEngine.rawValue,
                     "showSearchSuggestions": BrowserSearchSettings.defaultSearchSuggestionsEnabled,
+                    "engine": BrowserEngineSettings.defaultEngine.rawValue,
                     "theme": BrowserThemeSettings.defaultMode.rawValue,
                     "openTerminalLinksInCmuxBrowser": BrowserLinkOpenSettings.defaultOpenTerminalLinksInCmuxBrowser,
                     "interceptTerminalOpenCommandInCmuxBrowser": BrowserLinkOpenSettings.defaultInterceptTerminalOpenCommandInCmuxBrowser,
