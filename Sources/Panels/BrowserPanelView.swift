@@ -1393,7 +1393,7 @@ struct BrowserPanelView: View {
 
         return Group {
             if panel.shouldRenderWebView {
-                WebViewRepresentable(
+                BrowserEngineSurfaceView(
                     panel: panel,
                     paneId: paneId,
                     shouldAttachWebView: isVisibleInUI && isCurrentPaneOwner && !useLocalInlineDeveloperToolsHosting,
