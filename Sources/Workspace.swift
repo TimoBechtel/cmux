@@ -7158,6 +7158,7 @@ final class Workspace: Identifiable, ObservableObject {
         var permitsCreationWhenBrowserDisabled: Bool {
             self == .restoration
         }
+
     }
 
     static let terminalScrollBarHiddenDidChangeNotification = Notification.Name(
@@ -10408,6 +10409,10 @@ final class Workspace: Identifiable, ObservableObject {
             }
             return nil
         }
+        guard BrowserEngineAvailability.canCreateBrowserSurface() else {
+            BrowserEngineAvailability.presentUnavailableAlertIfNeeded(creationPolicy.reportsUnavailableBrowserEngine)
+            return nil
+        }
 
         // Find the pane containing the source panel
         guard let sourceTabId = surfaceIdFromPanelId(panelId) else { return nil }
@@ -10507,6 +10512,10 @@ final class Workspace: Identifiable, ObservableObject {
             if let externalURL = url ?? initialRequest?.url {
                 _ = NSWorkspace.shared.open(externalURL)
             }
+            return nil
+        }
+        guard BrowserEngineAvailability.canCreateBrowserSurface() else {
+            BrowserEngineAvailability.presentUnavailableAlertIfNeeded(creationPolicy.reportsUnavailableBrowserEngine)
             return nil
         }
 
