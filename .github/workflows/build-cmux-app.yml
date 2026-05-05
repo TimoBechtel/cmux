@@ -1,0 +1,396 @@
+name: Build cmux app
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  attestations: write
+  id-token: write
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  APP_NAME: cmux Chromium
+  APP_BUNDLE_ID: com.timobechtel.cmuxterm.app.chromium
+  ARTIFACT_NAME: cmux-chromium-macos-arm64.zip
+
+jobs:
+  build-ghostty-cli-helper:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Determine Ghostty helper cache key
+        id: ghostty-helper-cache-key
+        run: |
+          set -euo pipefail
+          echo "ghostty-sha=$(git -C ghostty rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache universal Ghostty CLI helper
+        id: cache-ghostty-cli-helper
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ghostty-cli-helper/ghostty
+          key: ghostty-cli-helper-${{ steps.ghostty-helper-cache-key.outputs.ghostty-sha }}-${{ hashFiles('scripts/build-ghostty-cli-helper.sh', 'scripts/install-zig-ci.sh') }}
+
+      - name: Install zig
+        if: steps.cache-ghostty-cli-helper.outputs.cache-hit != 'true'
+        run: ./scripts/install-zig-ci.sh
+
+      - name: Cache Zig packages
+        if: steps.cache-ghostty-cli-helper.outputs.cache-hit != 'true'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/zig
+          key: zig-packages-${{ hashFiles('ghostty/build.zig.zon', 'ghostty/build.zig.zon.json') }}
+          restore-keys: zig-packages-
+
+      - name: Build universal Ghostty CLI helper
+        if: steps.cache-ghostty-cli-helper.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ghostty-cli-helper
+          ./scripts/build-ghostty-cli-helper.sh --universal --output ghostty-cli-helper/ghostty
+          lipo ghostty-cli-helper/ghostty -verify_arch arm64 x86_64
+
+      - name: Verify universal Ghostty CLI helper
+        run: |
+          set -euo pipefail
+          test -x ghostty-cli-helper/ghostty
+          lipo ghostty-cli-helper/ghostty -verify_arch arm64 x86_64
+
+      - name: Upload universal Ghostty CLI helper
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cmux-ghostty-cli-helper
+          path: ghostty-cli-helper/ghostty
+          if-no-files-found: error
+
+  build:
+    needs: build-ghostty-cli-helper
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Select Xcode
+        run: |
+          set -euo pipefail
+          # The app must link against the macOS 26 SDK so it adopts Liquid Glass
+          # on Tahoe. The Ghostty CLI helper is built separately on macOS 15
+          # and injected after this app build.
+          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
+            XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
+          else
+            XCODE_APP="$(
+              find /Applications -maxdepth 1 -name 'Xcode*.app' -print 2>/dev/null \
+                | sort \
+                | tail -n 1 \
+                || true
+            )"
+            if [ -n "$XCODE_APP" ]; then
+              XCODE_DIR="$XCODE_APP/Contents/Developer"
+            else
+              echo "No Xcode.app found under /Applications" >&2
+              exit 1
+            fi
+          fi
+          SDK_VERSION="$(DEVELOPER_DIR="$XCODE_DIR" xcrun --sdk macosx --show-sdk-version)"
+          if [ "${SDK_VERSION%%.*}" -lt 26 ]; then
+            echo "No Xcode with the macOS 26+ SDK found; the app would ship without Liquid Glass on Tahoe." >&2
+            exit 1
+          fi
+          echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
+          export DEVELOPER_DIR="$XCODE_DIR"
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
+
+      - name: Capture GhosttyKit cache key
+        id: ghostty-revision
+        run: |
+          sha="$(git -C ghostty rev-parse HEAD)"
+          checksum="$(
+            awk -v sha="$sha" '
+              $1 == sha {
+                print $2
+                found = 1
+                exit
+              }
+              END {
+                if (!found) {
+                  exit 1
+                }
+              }
+            ' scripts/ghosttykit-checksums.txt
+          )"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "checksum=$checksum" >> "$GITHUB_OUTPUT"
+
+      - name: Cache GhosttyKit.xcframework
+        id: cache-ghosttykit
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: GhosttyKit.xcframework
+          key: ghosttykit-${{ steps.ghostty-revision.outputs.sha }}-${{ steps.ghostty-revision.outputs.checksum }}
+
+      - name: Download pre-built GhosttyKit.xcframework
+        if: steps.cache-ghosttykit.outputs.cache-hit != 'true'
+        run: ./scripts/download-prebuilt-ghosttykit.sh
+
+      - name: Cache Chromium Embedded Framework
+        id: cache-cef
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .cef-cache
+          key: cef-${{ hashFiles('scripts/download-cef-runtime.sh') }}
+
+      - name: Download Chromium Embedded Framework
+        if: steps.cache-cef.outputs.cache-hit != 'true'
+        run: ./scripts/download-cef-runtime.sh
+
+      - name: Cache Swift packages
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: .spm-cache
+          key: spm-${{ hashFiles('cmux.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/Package.resolved') }}
+          restore-keys: spm-
+
+      - name: Setup Go
+        if: github.event_name != 'pull_request' && github.ref_name == 'main'
+        uses: actions/setup-go@4a3601121dd01d1626a1e23e37211e3254c1c06c # v6.4.0
+        with:
+          go-version-file: daemon/remote/go.mod
+          cache-dependency-path: daemon/remote/go.sum
+
+      - name: Build app
+        env:
+          CMUX_SKIP_ZIG_BUILD: "1"
+        run: |
+          set -euo pipefail
+          xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Release \
+            -derivedDataPath build-cmux-app \
+            -destination 'generic/platform=macOS' \
+            -clonedSourcePackagesDirPath .spm-cache \
+            ARCHS=arm64 \
+            ONLY_ACTIVE_ARCH=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            SWIFT_COMPILATION_MODE=singlefile \
+            PRODUCT_BUNDLE_IDENTIFIER="$APP_BUNDLE_ID" \
+            build
+
+      - name: Download universal Ghostty CLI helper
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: cmux-ghostty-cli-helper
+          path: ghostty-cli-helper
+
+      - name: Inject universal Ghostty CLI helper
+        run: |
+          set -euo pipefail
+          ./scripts/install-prebuilt-ghostty-cli-helper.sh \
+            ghostty-cli-helper/ghostty \
+            build-cmux-app/Build/Products/Release/cmux.app
+
+      - name: Rename fork app bundle
+        run: |
+          set -euo pipefail
+          APP_DIR="build-cmux-app/Build/Products/Release"
+          mv "$APP_DIR/cmux.app" "$APP_DIR/${APP_NAME}.app"
+
+      - name: Stamp fork app identity
+        run: |
+          set -euo pipefail
+          APP_PLIST="build-cmux-app/Build/Products/Release/${APP_NAME}.app/Contents/Info.plist"
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleName ${APP_NAME}" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleDisplayName ${APP_NAME}" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleIdentifier ${APP_BUNDLE_ID}" "$APP_PLIST"
+
+      - name: Verify app bundle
+        run: |
+          set -euo pipefail
+          APP="build-cmux-app/Build/Products/Release/${APP_NAME}.app"
+          APP_BINARY="$APP/Contents/MacOS/cmux"
+          CLI_BINARY="$APP/Contents/Resources/bin/cmux"
+          GHOSTTY_HELPER="$APP/Contents/Resources/bin/ghostty"
+          CEF_BINARY="$APP/Contents/Frameworks/Chromium Embedded Framework.framework/Chromium Embedded Framework"
+          CHROMIUM_HELPER="$APP/Contents/Frameworks/cmux Chromium Helper.app/Contents/MacOS/cmux Chromium Helper"
+
+          test -d "$APP"
+          test -x "$APP_BINARY"
+          test -x "$CLI_BINARY"
+          test -x "$GHOSTTY_HELPER"
+          test -f "$CEF_BINARY"
+          test -x "$CHROMIUM_HELPER"
+
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$APP/Contents/Info.plist")" = "$APP_BUNDLE_ID"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleName' "$APP/Contents/Info.plist")" = "$APP_NAME"
+          test "$(/usr/libexec/PlistBuddy -c 'Print :CFBundleDisplayName' "$APP/Contents/Info.plist")" = "$APP_NAME"
+
+          for binary in "$APP_BINARY" "$CLI_BINARY" "$GHOSTTY_HELPER" "$CEF_BINARY" "$CHROMIUM_HELPER"; do
+            archs="$(lipo -archs "$binary")"
+            echo "$binary: $archs"
+            [[ "$archs" == *arm64* ]]
+          done
+
+      - name: Stamp dev version
+        if: github.event_name != 'pull_request' && github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          APP_PLIST="build-cmux-app/Build/Products/Release/${APP_NAME}.app/Contents/Info.plist"
+          BASE_VERSION=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$APP_PLIST")
+          SHORT_SHA="$(git rev-parse --short=9 HEAD)"
+          DEV_VERSION="${BASE_VERSION}-chromium.${GITHUB_RUN_NUMBER}"
+
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString ${DEV_VERSION}" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion ${GITHUB_RUN_NUMBER}" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CMUXCommit ${SHORT_SHA}" "$APP_PLIST" >/dev/null 2>&1 || \
+            /usr/libexec/PlistBuddy -c "Add :CMUXCommit string ${SHORT_SHA}" "$APP_PLIST"
+
+          echo "DEV_VERSION=${DEV_VERSION}" >> "$GITHUB_ENV"
+          echo "SHORT_SHA=${SHORT_SHA}" >> "$GITHUB_ENV"
+
+      - name: Disable automatic Sparkle updates for fork build
+        if: github.event_name != 'pull_request' && github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          APP_PLIST="build-cmux-app/Build/Products/Release/${APP_NAME}.app/Contents/Info.plist"
+
+          /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$APP_PLIST"
+
+      - name: Build remote daemon assets and inject manifest
+        if: github.event_name != 'pull_request' && github.ref_name == 'main'
+        run: |
+          set -euo pipefail
+          APP_PLIST="build-cmux-app/Build/Products/Release/${APP_NAME}.app/Contents/Info.plist"
+          RELEASE_TAG="chromium-${DEV_VERSION}"
+          ./scripts/build_remote_daemon_release_assets.sh \
+            --version "$DEV_VERSION" \
+            --release-tag "$RELEASE_TAG" \
+            --repo "$GITHUB_REPOSITORY" \
+            --output-dir "remote-daemon-assets"
+          MANIFEST_JSON="$(python3 -c 'import json,sys; print(json.dumps(json.load(open(sys.argv[1], encoding="utf-8")), separators=(",",":")))' remote-daemon-assets/cmuxd-remote-manifest.json)"
+          plutil -remove CMUXRemoteDaemonManifestJSON "$APP_PLIST" >/dev/null 2>&1 || true
+          plutil -insert CMUXRemoteDaemonManifestJSON -string "$MANIFEST_JSON" "$APP_PLIST"
+          /usr/libexec/PlistBuddy -c 'Print :CMUXRemoteDaemonManifestJSON' "$APP_PLIST" >/dev/null
+
+      - name: Attest remote daemon assets
+        if: github.event_name != 'pull_request' && github.ref_name == 'main'
+        uses: actions/attest-build-provenance@a2bbfa25375fe432b6a289bc6b6cd05ecd0c4c32 # v4.1.0
+        with:
+          subject-path: |
+            remote-daemon-assets/cmuxd-remote-darwin-arm64
+            remote-daemon-assets/cmuxd-remote-darwin-amd64
+            remote-daemon-assets/cmuxd-remote-linux-arm64
+            remote-daemon-assets/cmuxd-remote-linux-amd64
+            remote-daemon-assets/cmuxd-remote-checksums.txt
+            remote-daemon-assets/cmuxd-remote-manifest.json
+
+      - name: Ad-hoc sign fork app bundle
+        run: |
+          set -euo pipefail
+          APP="build-cmux-app/Build/Products/Release/${APP_NAME}.app"
+          SIGN_COMMON=(--force --sign - --timestamp=none --generate-entitlement-der)
+
+          xattr -cr "$APP"
+
+          for helper in "$APP/Contents/Resources/bin"/*; do
+            [[ -f "$helper" && -x "$helper" ]] || continue
+            /usr/bin/codesign "${SIGN_COMMON[@]}" "$helper"
+          done
+
+          if [[ -d "$APP/Contents/PlugIns" ]]; then
+            while IFS= read -r -d '' plugin; do
+              /usr/bin/codesign "${SIGN_COMMON[@]}" --deep "$plugin"
+            done < <(find "$APP/Contents/PlugIns" -mindepth 1 -maxdepth 1 -print0)
+          fi
+
+          if [[ -d "$APP/Contents/Frameworks" ]]; then
+            while IFS= read -r -d '' framework; do
+              /usr/bin/codesign "${SIGN_COMMON[@]}" --deep "$framework"
+            done < <(find "$APP/Contents/Frameworks" -mindepth 1 -maxdepth 1 -print0)
+          fi
+
+          /usr/bin/codesign "${SIGN_COMMON[@]}" "$APP"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+
+      - name: Package app artifact
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts
+          ditto -c -k --keepParent "build-cmux-app/Build/Products/Release/${APP_NAME}.app" "artifacts/${ARTIFACT_NAME}"
+
+      - name: Upload app artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cmux-macos-arm64
+          path: artifacts/${{ env.ARTIFACT_NAME }}
+          if-no-files-found: error
+
+      - name: Check whether build commit is still current main HEAD
+        if: github.event_name != 'pull_request' && github.ref_name == 'main'
+        id: current-head
+        run: |
+          set -euo pipefail
+          CURRENT_MAIN_SHA="$(git ls-remote origin refs/heads/main | awk '{print $1}')"
+          BUILD_SHA="$GITHUB_SHA"
+          if [ "$CURRENT_MAIN_SHA" = "$BUILD_SHA" ]; then
+            STILL_CURRENT=true
+          else
+            STILL_CURRENT=false
+          fi
+          echo "still-current=${STILL_CURRENT}" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Release publish guard"
+            echo
+            echo "- build sha: \`$BUILD_SHA\`"
+            echo "- current main sha: \`$CURRENT_MAIN_SHA\`"
+            echo "- publish release: \`$STILL_CURRENT\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Publish Chromium release
+        if: github.event_name != 'pull_request' && github.ref_name == 'main' && steps.current-head.outputs.still-current == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          ASSET_PATH="artifacts/${ARTIFACT_NAME}"
+          RELEASE_TAG="chromium-${DEV_VERSION}"
+          RELEASE_TITLE="cmux Chromium ${DEV_VERSION}"
+          RELEASE_NOTES="$(mktemp)"
+          cat > "$RELEASE_NOTES" <<EOF
+          Ad-hoc signed cmux Chromium build from this fork.
+
+          - App: ${APP_NAME}
+          - Bundle ID: ${APP_BUNDLE_ID}
+          - Version: ${DEV_VERSION}
+          - Commit: ${SHORT_SHA}
+          - Branch: ${GITHUB_REF_NAME}
+          - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Asset: ${ARTIFACT_NAME}
+          - Latest download: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/latest/download/${ARTIFACT_NAME}
+
+          This build is arm64-only and is not Apple-notarized.
+          EOF
+
+          gh release create "$RELEASE_TAG" "$ASSET_PATH" remote-daemon-assets/cmuxd-remote-* \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file "$RELEASE_NOTES" \
+            --latest
