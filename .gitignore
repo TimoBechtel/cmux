@@ -57,3 +57,6 @@ tmp-*/
 
 # Local dogfood scratch (screenshots, recordings) — never commit
 artifacts/
+
+# Chromium Embedded Framework local runtime cache
+.cef-cache/
