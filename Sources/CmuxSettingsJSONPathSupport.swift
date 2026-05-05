@@ -124,6 +124,7 @@ extension CmuxSettingsFileStore {
         "automation.portRange",
         "browser.defaultSearchEngine",
         "browser.showSearchSuggestions",
+        "browser.engine",
         "browser.theme",
         "browser.discardHiddenWebViews",
         "browser.hiddenWebViewDiscardDelaySeconds",
