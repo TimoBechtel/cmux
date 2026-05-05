@@ -11656,6 +11656,11 @@ class TerminalController {
         let urlStr = v2String(params, "url")
         let url = urlStr.flatMap { URL(string: $0) }
         let respectExternalOpenRules = v2Bool(params, "respect_external_open_rules") ?? false
+
+        if !BrowserEngineAvailability.canCreateBrowserSurface() {
+            return BrowserEngineAvailability.browserV2UnavailableResult(method: "browser.open_split")
+        }
+
         if BrowserAvailabilitySettings.isDisabled() {
             if v2IsDiffViewerURL(url) {
                 return .err(code: "browser_disabled", message: "cmux browser is disabled", data: nil)
