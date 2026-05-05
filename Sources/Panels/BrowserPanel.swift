@@ -2790,6 +2790,8 @@ final class BrowserPanel: Panel, ObservableObject {
     private(set) var webView: WKWebView
     private var websiteDataStore: WKWebsiteDataStore
     var webViewDidRequestClose: (() -> Void)?
+    let browserEngine: BrowserEngine
+    var chromiumHostView: ChromiumBrowserHostView?
 
     /// Monotonic identity for the current WKWebView instance.
     /// Incremented whenever we replace the underlying WKWebView after a process crash.
@@ -4010,6 +4012,7 @@ final class BrowserPanel: Panel, ObservableObject {
         self.shouldPreloadInitialNavigationInBackground = preloadInitialNavigationInBackground
         self.isOmnibarVisible = omnibarVisible
         self.usesTransparentBackground = transparentBackground
+        self.browserEngine = BrowserEngineSettings.currentEngine()
         self.websiteDataStore = isRemoteWorkspace
             ? WKWebsiteDataStore(forIdentifier: remoteWebsiteDataStoreIdentifier ?? workspaceId)
             : BrowserProfileStore.shared.websiteDataStore(for: resolvedProfileID)
@@ -5836,6 +5839,22 @@ final class BrowserPanel: Panel, ObservableObject {
             abandonRestoredSessionHistoryIfNeeded()
         }
         let effectiveRequest = remoteProxyPreparedRequest(from: request, logScope: "rewrite")
+        if usesChromiumEngine {
+            restoredSessionShouldRenderWebView = nil
+            shouldRenderWebView = true
+            currentURL = Self.remoteProxyDisplayURL(for: effectiveRequest.url) ?? originalURL
+            pageTitle = currentURL?.host ?? currentURL?.absoluteString ?? ""
+            if recordTypedNavigation {
+                historyStore.recordTypedNavigation(url: originalURL)
+            }
+            historyStore.recordVisit(url: currentURL, title: pageTitle)
+            if let url = effectiveRequest.url {
+                chromiumContentView().load(url)
+            }
+            nativeCanGoBack = true
+            refreshNavigationAvailability()
+            return
+        }
         // Some installs can end up with a legacy Chrome UA override; keep this pinned.
         webView.customUserAgent = BrowserUserAgentSettings.safariUserAgent
         hiddenWebViewDiscardManager.updateRestoredSessionRenderIntent(nil)
@@ -6301,6 +6320,7 @@ extension BrowserPanel {
     /// Go back in history
     func goBack() {
         guard canGoBack else { return }
+        if chromiumGoBackIfNeeded() { return }
         reactivateDiscardedWebViewWithoutNavigation(reason: "goBack")
         cancelInFlightNavigationBeforeHistoryTraversal()
         if usesRestoredSessionHistory {
@@ -6333,6 +6353,7 @@ extension BrowserPanel {
     /// Go forward in history
     func goForward() {
         guard canGoForward else { return }
+        if chromiumGoForwardIfNeeded() { return }
         reactivateDiscardedWebViewWithoutNavigation(reason: "goForward")
         cancelInFlightNavigationBeforeHistoryTraversal()
         if usesRestoredSessionHistory {
@@ -6471,6 +6492,7 @@ extension BrowserPanel {
 
     /// Reload the current page
     func reload() {
+        if chromiumReloadIfNeeded() { return }
         if prepareForReload(reason: "reload", mode: .soft) {
             return
         }
@@ -6487,6 +6509,7 @@ extension BrowserPanel {
 
     /// Stop loading
     func stopLoading() {
+        if chromiumStopLoadingIfNeeded() { return }
         webView.stopLoading()
         isMainFrameProvisionalNavigationActive = false
     }
@@ -6907,6 +6930,10 @@ extension BrowserPanel {
 
     @discardableResult
     func toggleDeveloperTools() -> Bool {
+        if let handled = toggleChromiumDeveloperToolsIfNeeded() {
+            if handled { setPreferredDeveloperToolsVisible(chromiumDeveloperToolsVisible) }
+            return handled
+        }
 #if DEBUG
         cmuxDebugLog(
             "browser.devtools toggle.begin panel=\(id.uuidString.prefix(5)) " +
@@ -6933,11 +6960,19 @@ extension BrowserPanel {
 
     @discardableResult
     func showDeveloperTools() -> Bool {
+        if let handled = showChromiumDeveloperToolsIfNeeded() {
+            setPreferredDeveloperToolsVisible(true)
+            return handled
+        }
         return enqueueDeveloperToolsVisibilityTransition(to: true, source: "show")
     }
 
     @discardableResult
     func showDeveloperToolsConsole() -> Bool {
+        if let handled = showChromiumDeveloperToolsIfNeeded() {
+            setPreferredDeveloperToolsVisible(true)
+            return handled
+        }
         guard showDeveloperTools() else { return false }
         guard !isDeveloperToolsTransitionInFlight else { return true }
         guard let inspector = webView.cmuxInspectorObject() else { return true }
