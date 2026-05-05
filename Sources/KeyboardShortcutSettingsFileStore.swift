@@ -927,6 +927,13 @@ final class CmuxSettingsFileStore {
         }
         applyBooleanSettings(BrowserSettingsFileMapping.booleanSettings, from: section, sourcePath: sourcePath, snapshot: &snapshot)
         applyStringSettings(BrowserSettingsFileMapping.stringSettings, from: section, snapshot: &snapshot)
+        if let raw = jsonString(section["engine"]) {
+            guard let engine = BrowserEngine(rawValue: raw) else {
+                logInvalid("browser.engine", sourcePath: sourcePath)
+                return
+            }
+            snapshot.managedUserDefaults[BrowserEngineSettings.engineKey] = .string(engine.rawValue)
+        }
         if let raw = jsonString(section["theme"]) {
             guard let mode = BrowserThemeMode(rawValue: raw) else {
                 logInvalid("browser.theme", sourcePath: sourcePath)
