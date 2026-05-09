@@ -8180,6 +8180,11 @@ extension BrowserPanel {
             return .browser(.webView)
         }
 
+        if let chromiumHostView,
+           Self.responderChainContains(responder, target: chromiumHostView) {
+            return .browser(.webView)
+        }
+
         return nil
     }
 
