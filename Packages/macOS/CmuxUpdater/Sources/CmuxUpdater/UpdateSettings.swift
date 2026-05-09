@@ -23,6 +23,8 @@ public struct UpdateSettings: Sendable {
     public let previousDefaultScheduledCheckInterval: TimeInterval
     /// The scheduled-check interval cmux registers (1h by default).
     public let scheduledCheckInterval: TimeInterval
+    /// The default automatic-check state from the host bundle's Sparkle configuration.
+    public let defaultAutomaticChecksEnabled: Bool
 
     /// Creates the settings with cmux's defaults.
     ///
@@ -30,10 +32,14 @@ public struct UpdateSettings: Sendable {
     ///   Defaults to one hour.
     /// - Parameter previousDefaultScheduledCheckInterval: The legacy interval the migration
     ///   upgrades away from when it sees it persisted. Defaults to 24 hours.
+    /// - Parameter defaultAutomaticChecksEnabled: Whether automatic checks default to enabled.
+    ///   Defaults to the `SUEnableAutomaticChecks` value in the main bundle's Info.plist.
     public init(scheduledCheckInterval: TimeInterval = 60 * 60,
-                previousDefaultScheduledCheckInterval: TimeInterval = 60 * 60 * 24) {
+                previousDefaultScheduledCheckInterval: TimeInterval = 60 * 60 * 24,
+                defaultAutomaticChecksEnabled: Bool = Bundle.main.object(forInfoDictionaryKey: Self.automaticChecksKey) as? Bool ?? true) {
         self.scheduledCheckInterval = scheduledCheckInterval
         self.previousDefaultScheduledCheckInterval = previousDefaultScheduledCheckInterval
+        self.defaultAutomaticChecksEnabled = defaultAutomaticChecksEnabled
     }
 
     /// Registers the update defaults on `defaults` and runs the one-time migration.
@@ -43,17 +49,19 @@ public struct UpdateSettings: Sendable {
     /// installs that predate the embedded defaults.
     public func apply(to defaults: UserDefaults) {
         defaults.register(defaults: [
-            Self.automaticChecksKey: true,
+            Self.automaticChecksKey: defaultAutomaticChecksEnabled,
             Self.automaticallyUpdateKey: false,
             Self.scheduledCheckIntervalKey: scheduledCheckInterval,
             Self.sendProfileInfoKey: false,
         ])
 
+        if !defaultAutomaticChecksEnabled {
+            defaults.set(false, forKey: Self.automaticChecksKey)
+        }
+
         guard !defaults.bool(forKey: Self.migrationKey) else { return }
 
-        // Repair older installs that may have ended up with automatic checks disabled
-        // before the updater defaults were embedded in Info.plist.
-        defaults.set(true, forKey: Self.automaticChecksKey)
+        defaults.set(defaultAutomaticChecksEnabled, forKey: Self.automaticChecksKey)
 
         if let interval = defaults.object(forKey: Self.scheduledCheckIntervalKey) as? NSNumber {
             let currentInterval = interval.doubleValue
