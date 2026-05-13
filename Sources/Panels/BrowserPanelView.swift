@@ -742,8 +742,7 @@ struct BrowserPanelView: View {
         }
         .onReceive(NotificationCenter.default.publisher(for: .webViewDidReceiveClick).filter { [weak panel] note in
             // Only handle clicks from our own webview.
-            guard let webView = note.object as? CmuxWebView else { return false }
-            return webView === panel?.webView
+            panel?.browserFocusNotificationWindow(for: note.object) != nil
         }) { _ in
 #if DEBUG
             cmuxDebugLog(
@@ -752,6 +751,7 @@ struct BrowserPanelView: View {
                 "addressFocused=\(addressBarFocused ? 1 : 0)"
             )
 #endif
+            panel.noteWebViewFocused()
             if addressBarFocused {
 #if DEBUG
                 logBrowserFocusState(event: "addressBarFocus.webViewClickBlur")
