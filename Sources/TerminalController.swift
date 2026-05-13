@@ -6078,7 +6078,7 @@ class TerminalController {
     }
 
     private nonisolated func v2WaitForBrowserCondition(
-        _ webView: WKWebView,
+        _ browserPanel: BrowserPanel,
         surfaceId: UUID,
         conditionScript: String,
         timeoutMs: Int
@@ -6149,7 +6149,7 @@ class TerminalController {
         """
 
         switch v2RunBrowserJavaScript(
-            webView,
+            browserPanel,
             surfaceId: surfaceId,
             script: waitScript,
             timeout: timeout + 1.0,
@@ -6271,6 +6271,115 @@ class TerminalController {
     }
 
     private nonisolated func v2RunBrowserJavaScript(
+        _ browserPanel: BrowserPanel,
+        surfaceId: UUID,
+        script: String,
+        timeout: TimeInterval = 5.0,
+        useEval: Bool = true,
+        onIsolatedWorldFallback: (() -> Void)? = nil
+    ) -> V2JavaScriptResult {
+        guard v2MainSync({ browserPanel.usesChromiumEngine }) else {
+            return v2RunBrowserJavaScript(
+                v2MainSync { browserPanel.webView },
+                surfaceId: surfaceId,
+                script: script,
+                timeout: timeout,
+                useEval: useEval,
+                onIsolatedWorldFallback: onIsolatedWorldFallback
+            )
+        }
+
+        let scriptLiteral = v2JSONLiteral(script)
+        let framePrelude: String
+        if let frameSelector = v2BrowserCurrentFrameSelector(surfaceId: surfaceId) {
+            let selectorLiteral = v2JSONLiteral(frameSelector)
+            framePrelude = """
+            let __cmuxDoc = document;
+            try {
+              const __cmuxFrame = document.querySelector(\(selectorLiteral));
+              if (__cmuxFrame && __cmuxFrame.contentDocument) {
+                __cmuxDoc = __cmuxFrame.contentDocument;
+              }
+            } catch (_) {}
+            """
+        } else {
+            framePrelude = "const __cmuxDoc = document;"
+        }
+
+        let executionBlock = useEval ? "const __r = eval(\(scriptLiteral));" : "const __r = \(script);"
+        let evaluateScript = """
+        (async () => {
+          \(framePrelude)
+
+          const __cmuxMaybeAwait = async (__r) => {
+            if (__r !== null && (typeof __r === 'object' || typeof __r === 'function') && typeof __r.then === 'function') {
+              return await __r;
+            }
+            return __r;
+          };
+
+          const __cmuxEvalInFrame = async function() {
+            const document = __cmuxDoc;
+            \(executionBlock)
+            const __value = await __cmuxMaybeAwait(__r);
+            return {
+              __cmux_t: (typeof __value === 'undefined') ? 'undefined' : 'value',
+              __cmux_v: __value
+            };
+          };
+
+          return await __cmuxEvalInFrame();
+        })()
+        """
+
+        let pageURL = v2MainSync { browserPanel.currentURL }
+        var rawResult: V2JavaScriptResult?
+        if Thread.isMainThread {
+            let runLoop = CFRunLoopGetCurrent()
+            let resultLock = NSLock()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result: V2JavaScriptResult
+                do {
+                    result = .success(try ChromiumBrowserHostView.evaluateJavaScriptWithRemoteDebuggingSync(
+                        evaluateScript,
+                        pageURL: pageURL,
+                        timeout: timeout
+                    ))
+                } catch {
+                    result = .failure(error.localizedDescription)
+                }
+                resultLock.lock()
+                rawResult = result
+                resultLock.unlock()
+                CFRunLoopStop(runLoop)
+            }
+
+            let deadline = Date().addingTimeInterval(max(0.1, timeout) + 2.0)
+            while Date() < deadline {
+                resultLock.lock()
+                let isComplete = rawResult != nil
+                resultLock.unlock()
+                if isComplete { break }
+                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+            }
+        } else {
+            do {
+                rawResult = .success(try ChromiumBrowserHostView.evaluateJavaScriptWithRemoteDebuggingSync(
+                    evaluateScript,
+                    pageURL: pageURL,
+                    timeout: timeout
+                ))
+            } catch {
+                rawResult = .failure(error.localizedDescription)
+            }
+        }
+
+        return v2UnwrapBrowserJavaScriptEnvelope(
+            rawResult ?? .failure("Timed out waiting for Chromium JavaScript result.")
+        )
+    }
+
+    private nonisolated func v2RunBrowserJavaScript(
         _ webView: WKWebView,
         surfaceId: UUID,
         script: String,
@@ -6383,6 +6492,15 @@ class TerminalController {
         case .failure(let message):
             return .failure(message)
         case .success(let value):
+            return v2UnwrapBrowserJavaScriptEnvelope(.success(value))
+        }
+    }
+
+    private nonisolated func v2UnwrapBrowserJavaScriptEnvelope(_ rawResult: V2JavaScriptResult) -> V2JavaScriptResult {
+        switch rawResult {
+        case .failure(let message):
+            return .failure(message)
+        case .success(let value):
             guard let dict = value as? [String: Any],
                   let type = dict[Self.v2BrowserEvalEnvelopeTypeKey] as? String else {
                 return .success(value)
@@ -6457,10 +6575,10 @@ class TerminalController {
           return true;
         })()
         """
-        _ = v2RunBrowserJavaScript(v2MainSync { browserPanel.webView }, surfaceId: surfaceId, script: injector)
+        _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: injector)
 
         for script in scripts {
-            _ = v2RunBrowserJavaScript(v2MainSync { browserPanel.webView }, surfaceId: surfaceId, script: script)
+            _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: script)
         }
         for css in styles {
             let cssLiteral = v2JSONLiteral(css)
@@ -6475,7 +6593,7 @@ class TerminalController {
               return true;
             })()
             """
-            _ = v2RunBrowserJavaScript(v2MainSync { browserPanel.webView }, surfaceId: surfaceId, script: styleScript)
+            _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: styleScript)
         }
     }
 
@@ -6847,7 +6965,7 @@ class TerminalController {
     ) -> [String: Any] {
         let script = v2BrowserControl.notFoundDiagnosticsScript(selector: selector)
 
-        switch v2RunBrowserJavaScript(v2MainSync { browserPanel.webView }, surfaceId: surfaceId, script: script, timeout: 4.0) {
+        switch v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: script, timeout: 4.0) {
         case .failure(let message):
             return [
                 "selector": selector,
@@ -6965,7 +7083,7 @@ class TerminalController {
             let selectorCondition = "document.querySelector(\(v2JSONLiteral(selector))) !== null"
 
             for attempt in 1...retryAttempts {
-                switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script, useEval: false) {
+                switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script, useEval: false) {
                 case .failure(let message):
                     return .err(code: "js_error", message: message, data: ["action": actionName, "selector": selector])
                 case .success(let value):
@@ -6991,7 +7109,7 @@ class TerminalController {
                     if errorText == "not_found", attempt < retryAttempts {
                         let waitTimeoutMs = max(80, (retryAttempts - attempt) * 80)
                         guard case .met = v2WaitForBrowserCondition(
-                            ctx.webView,
+                            ctx.browserPanel,
                             surfaceId: surfaceId,
                             conditionScript: selectorCondition,
                             timeoutMs: waitTimeoutMs
@@ -7037,7 +7155,7 @@ class TerminalController {
         return v2BrowserWithPanelContext(params: params) { ctx in
             var usedIsolatedWorld = false
             switch v2RunBrowserJavaScript(
-                ctx.webView,
+                ctx.browserPanel,
                 surfaceId: ctx.surfaceId,
                 script: script,
                 timeout: 10.0,
@@ -7253,7 +7371,7 @@ class TerminalController {
             })()
             """
 
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script, timeout: 10.0, useEval: false) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script, timeout: 10.0, useEval: false) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -7382,7 +7500,7 @@ class TerminalController {
         var setupResult: V2CallResult?
         var workspaceId: UUID?
         var surfaceIdOut: UUID?
-        var webView: WKWebView?
+        var browserPanelOut: BrowserPanel?
 
         v2MainSync {
             guard let tabManager = self.v2ResolveTabManager(params: params) else {
@@ -7400,13 +7518,13 @@ class TerminalController {
             }
             workspaceId = context.workspaceId
             surfaceIdOut = context.surfaceId
-            webView = context.webView
+            browserPanelOut = context.browserPanel
         }
 
         if let setupResult {
             return setupResult
         }
-        guard let workspaceId, let surfaceIdOut, let webView else {
+        guard let workspaceId, let surfaceIdOut, let browserPanelOut else {
             return .err(code: "internal_error", message: "Failed to resolve browser surface", data: nil)
         }
 
@@ -7422,7 +7540,7 @@ class TerminalController {
         }
 
         switch v2WaitForBrowserCondition(
-            webView,
+            browserPanelOut,
             surfaceId: surfaceIdOut,
             conditionScript: conditionScript,
             timeoutMs: timeoutMs
@@ -7443,7 +7561,7 @@ class TerminalController {
                 message: "Wait condition could not be evaluated: \(message)",
                 data: [
                     "timeout_ms": timeoutMs,
-                    "url": v2MainSync { webView.url?.absoluteString ?? "about:blank" },
+                    "url": v2MainSync { browserPanelOut.currentURL?.absoluteString ?? "about:blank" },
                     "hint": "Verify the page loaded with 'cmux browser <surface> get url' before waiting"
                 ]
             )
@@ -7715,7 +7833,7 @@ class TerminalController {
               return { ok: true };
             })()
             """
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success:
@@ -7748,7 +7866,7 @@ class TerminalController {
               return { ok: true };
             })()
             """
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success:
@@ -7781,7 +7899,7 @@ class TerminalController {
               return { ok: true };
             })()
             """
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success:
@@ -7870,7 +7988,7 @@ class TerminalController {
                 script = "window.scrollBy({ left: \(dx), top: \(dy), behavior: 'instant' }); ({ ok: true })"
             }
 
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -8067,7 +8185,7 @@ class TerminalController {
             }
             let selectorLiteral = v2JSONLiteral(selector)
             let script = "document.querySelectorAll(\(selectorLiteral)).length"
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -8630,7 +8748,7 @@ class TerminalController {
             let surfaceId = ctx.surfaceId
             let script = v2BrowserControl.findScript(finderBody: finderBody)
 
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: ["action": actionName])
             case .success(let value):
@@ -8792,7 +8910,7 @@ class TerminalController {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
             }
             let script = v2BrowserControl.findFirstScript(selector: selector)
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -8826,7 +8944,7 @@ class TerminalController {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
             }
             let script = v2BrowserControl.findLastScript(selector: selector)
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -8866,7 +8984,7 @@ class TerminalController {
                 return .err(code: "not_found", message: "Element reference not found", data: ["selector": selectorRaw])
             }
             let script = v2BrowserControl.findNthScript(selector: selector, index: index)
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -8918,7 +9036,7 @@ class TerminalController {
               return { ok: true };
             })()
             """
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -9685,7 +9803,7 @@ class TerminalController {
         let key = v2String(params, "key")
         return v2BrowserWithPanelContext(params: params) { ctx in
             let script = v2BrowserControl.storageGetScript(storageType: storageType, key: key)
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -9715,7 +9833,7 @@ class TerminalController {
         return v2BrowserWithPanelContext(params: params) { ctx in
             let valueLiteral = v2JSONLiteral(v2NormalizeJSValue(value))
             let script = v2BrowserControl.storageSetScript(storageType: storageType, key: key, valueLiteral: valueLiteral)
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -9736,7 +9854,7 @@ class TerminalController {
         let storageType = v2BrowserStorageType(params)
         return v2BrowserWithPanelContext(params: params) { ctx in
             let script = v2BrowserControl.storageClearScript(storageType: storageType)
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: script) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: script) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -10163,7 +10281,7 @@ class TerminalController {
             """
 
             let storageValue: Any
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: storageScript, timeout: 10.0) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: storageScript, timeout: 10.0) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -10263,7 +10381,7 @@ class TerminalController {
                   return true;
                 })()
                 """
-                _ = v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: script, timeout: 10.0)
+                _ = v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: script, timeout: 10.0)
             }
 
             return .ok(v2BrowserPanelFields(ctx, adding: [
@@ -10287,7 +10405,7 @@ class TerminalController {
                 ctx.webView.configuration.userContentController.addUserScript(userScript)
                 return scripts.count
             }
-            _ = v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: script, timeout: 10.0)
+            _ = v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: script, timeout: 10.0)
 
             return .ok(v2BrowserPanelFields(ctx, adding: ["scripts": scriptsCount]))
         }
@@ -10298,7 +10416,7 @@ class TerminalController {
             return .err(code: "invalid_params", message: "Missing script", data: nil)
         }
         return v2BrowserWithPanelContext(params: params) { ctx in
-            switch v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: script, timeout: 10.0) {
+            switch v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: script, timeout: 10.0) {
             case .failure(let message):
                 return .err(code: "js_error", message: message, data: nil)
             case .success(let value):
@@ -10331,7 +10449,7 @@ class TerminalController {
                 ctx.webView.configuration.userContentController.addUserScript(userScript)
                 return styles.count
             }
-            _ = v2RunBrowserJavaScript(ctx.webView, surfaceId: ctx.surfaceId, script: source, timeout: 10.0)
+            _ = v2RunBrowserJavaScript(ctx.browserPanel, surfaceId: ctx.surfaceId, script: source, timeout: 10.0)
 
             return .ok(v2BrowserPanelFields(ctx, adding: ["styles": stylesCount]))
         }
