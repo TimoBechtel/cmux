@@ -1,12 +1,12 @@
 import CmuxBrowser
 import WebKit
 
-/// Evaluates find-in-page scripts against the current `WKWebView` of a `BrowserPanel`.
+/// Evaluates find-in-page scripts against the current browser engine of a `BrowserPanel`.
 ///
 /// `BrowserPanel` owns its `BrowserFindService`, which owns this adapter, which holds a `weak`
 /// reference back to the panel. The weak back-reference breaks what would otherwise be a retain
 /// cycle (panel → service → evaluator → panel) and lets each evaluation read the panel's current
-/// `webView`, which is reassigned on profile switches.
+/// browser engine, which can be reassigned on profile switches.
 @MainActor
 final class BrowserFindWebViewEvaluator: BrowserFindScriptEvaluating {
     private weak var panel: BrowserPanel?
@@ -19,6 +19,6 @@ final class BrowserFindWebViewEvaluator: BrowserFindScriptEvaluating {
 
     func evaluate(_ script: BrowserFindScript) async throws -> Any? {
         guard let panel else { return nil }
-        return try await panel.webView.evaluateJavaScript(script.source)
+        return try await panel.evaluateJavaScript(script.source)
     }
 }
