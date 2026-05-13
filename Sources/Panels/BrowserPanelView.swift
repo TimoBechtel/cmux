@@ -785,8 +785,7 @@ struct BrowserPanelView: View {
     }
 
     private func handleBrowserWebViewClickIntent(_ notification: Notification) {
-        guard let webView = notification.object as? CmuxWebView,
-              webView === panel.webView else {
+        guard panel.browserFocusNotificationWindow(for: notification.object) != nil else {
             return
         }
 #if DEBUG
@@ -796,6 +795,7 @@ struct BrowserPanelView: View {
             "addressFocused=\(addressBarFocused ? 1 : 0)"
         )
 #endif
+        panel.noteWebViewFocused()
         if addressBarFocused {
 #if DEBUG
             logBrowserFocusState(event: "addressBarFocus.webViewClickBlur")
