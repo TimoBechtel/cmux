@@ -3312,6 +3312,8 @@ final class BrowserPanel: Panel, ObservableObject {
     private var restoredForwardHistoryStack: [URL] = []
     private var restoredHistoryCurrentURL: URL?
     private var isMainFrameProvisionalNavigationActive: Bool = false
+    private var chromiumBackHistoryURLStrings: [String] = []
+    private var chromiumForwardHistoryURLStrings: [String] = []
 
     /// Published estimated progress (0.0 - 1.0)
     @Published private(set) var estimatedProgress: Double = 0.0
@@ -4615,11 +4617,23 @@ final class BrowserPanel: Panel, ObservableObject {
     ) {
         realignRestoredSessionHistoryToLiveCurrentIfPossible()
 
-        let nativeBack = webView.backForwardList.backList.compactMap {
-            Self.serializableSessionHistoryURLString($0.url)
-        }
-        let nativeForward = webView.backForwardList.forwardList.compactMap {
-            Self.serializableSessionHistoryURLString($0.url)
+        let nativeBack: [String]
+        let nativeForward: [String]
+        if usesChromiumEngine {
+            chromiumHostView?.refreshNavigationEntries()
+            nativeBack = Self.sanitizedSessionHistoryURLs(chromiumBackHistoryURLStrings).compactMap {
+                Self.serializableSessionHistoryURLString($0)
+            }
+            nativeForward = Self.sanitizedSessionHistoryURLs(chromiumForwardHistoryURLStrings).compactMap {
+                Self.serializableSessionHistoryURLString($0)
+            }
+        } else {
+            nativeBack = webView.backForwardList.backList.compactMap {
+                Self.serializableSessionHistoryURLString($0.url)
+            }
+            nativeForward = webView.backForwardList.forwardList.compactMap {
+                Self.serializableSessionHistoryURLString($0.url)
+            }
         }
 
         if usesRestoredSessionHistory {
@@ -5897,6 +5911,8 @@ extension BrowserPanel {
         estimatedProgress = 0
         nativeCanGoBack = false
         nativeCanGoForward = false
+        chromiumBackHistoryURLStrings = []
+        chromiumForwardHistoryURLStrings = []
         navigationDelegate?.lastAttemptedURL = nil
         abandonRestoredSessionHistoryIfNeeded()
 
@@ -6022,7 +6038,6 @@ extension BrowserPanel {
     /// Go back in history
     func goBack() {
         guard canGoBack else { return }
-        if chromiumGoBackIfNeeded() { return }
         reactivateDiscardedWebViewWithoutNavigation(reason: "goBack")
         cancelInFlightNavigationBeforeHistoryTraversal()
         if usesRestoredSessionHistory {
@@ -6044,6 +6059,7 @@ extension BrowserPanel {
             }
 
             if nativeCanGoBack {
+                if chromiumGoBackIfNeeded() { return }
                 webView.goBack()
                 return
             }
@@ -6052,19 +6068,20 @@ extension BrowserPanel {
             return
         }
 
+        if chromiumGoBackIfNeeded() { return }
         webView.goBack()
     }
 
     /// Go forward in history
     func goForward() {
         guard canGoForward else { return }
-        if chromiumGoForwardIfNeeded() { return }
         reactivateDiscardedWebViewWithoutNavigation(reason: "goForward")
         cancelInFlightNavigationBeforeHistoryTraversal()
         if usesRestoredSessionHistory {
             realignRestoredSessionHistoryToLiveCurrentIfPossible()
 
             if nativeCanGoForward {
+                if chromiumGoForwardIfNeeded() { return }
                 webView.goForward()
                 return
             }
@@ -6086,6 +6103,7 @@ extension BrowserPanel {
             return
         }
 
+        if chromiumGoForwardIfNeeded() { return }
         webView.goForward()
     }
 
@@ -7578,8 +7596,18 @@ extension BrowserPanel {
         if let isFullscreen = state.isFullscreen {
             isElementFullscreenActive = isFullscreen
         }
-        nativeCanGoBack = state.canGoBack
-        nativeCanGoForward = state.canGoForward
+        if let canGoBack = state.canGoBack {
+            nativeCanGoBack = canGoBack
+        }
+        if let canGoForward = state.canGoForward {
+            nativeCanGoForward = canGoForward
+        }
+        if let backHistoryURLStrings = state.backHistoryURLStrings {
+            chromiumBackHistoryURLStrings = backHistoryURLStrings
+        }
+        if let forwardHistoryURLStrings = state.forwardHistoryURLStrings {
+            chromiumForwardHistoryURLStrings = forwardHistoryURLStrings
+        }
         refreshNavigationAvailability()
     }
 
