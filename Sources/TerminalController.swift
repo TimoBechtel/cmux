@@ -6165,6 +6165,115 @@ class TerminalController {
     }
 
     private nonisolated func v2RunBrowserJavaScript(
+        _ browserPanel: BrowserPanel,
+        surfaceId: UUID,
+        script: String,
+        timeout: TimeInterval = 5.0,
+        useEval: Bool = true,
+        onIsolatedWorldFallback: (() -> Void)? = nil
+    ) -> V2JavaScriptResult {
+        guard v2MainSync({ browserPanel.usesChromiumEngine }) else {
+            return v2RunBrowserJavaScript(
+                v2MainSync { browserPanel.webView },
+                surfaceId: surfaceId,
+                script: script,
+                timeout: timeout,
+                useEval: useEval,
+                onIsolatedWorldFallback: onIsolatedWorldFallback
+            )
+        }
+
+        let scriptLiteral = v2JSONLiteral(script)
+        let framePrelude: String
+        if let frameSelector = v2BrowserCurrentFrameSelector(surfaceId: surfaceId) {
+            let selectorLiteral = v2JSONLiteral(frameSelector)
+            framePrelude = """
+            let __cmuxDoc = document;
+            try {
+              const __cmuxFrame = document.querySelector(\(selectorLiteral));
+              if (__cmuxFrame && __cmuxFrame.contentDocument) {
+                __cmuxDoc = __cmuxFrame.contentDocument;
+              }
+            } catch (_) {}
+            """
+        } else {
+            framePrelude = "const __cmuxDoc = document;"
+        }
+
+        let executionBlock = useEval ? "const __r = eval(\(scriptLiteral));" : "const __r = \(script);"
+        let evaluateScript = """
+        (async () => {
+          \(framePrelude)
+
+          const __cmuxMaybeAwait = async (__r) => {
+            if (__r !== null && (typeof __r === 'object' || typeof __r === 'function') && typeof __r.then === 'function') {
+              return await __r;
+            }
+            return __r;
+          };
+
+          const __cmuxEvalInFrame = async function() {
+            const document = __cmuxDoc;
+            \(executionBlock)
+            const __value = await __cmuxMaybeAwait(__r);
+            return {
+              __cmux_t: (typeof __value === 'undefined') ? 'undefined' : 'value',
+              __cmux_v: __value
+            };
+          };
+
+          return await __cmuxEvalInFrame();
+        })()
+        """
+
+        let pageURL = v2MainSync { browserPanel.currentURL }
+        var rawResult: V2JavaScriptResult?
+        if Thread.isMainThread {
+            let runLoop = CFRunLoopGetCurrent()
+            let resultLock = NSLock()
+            DispatchQueue.global(qos: .userInitiated).async {
+                let result: V2JavaScriptResult
+                do {
+                    result = .success(try ChromiumBrowserHostView.evaluateJavaScriptWithRemoteDebuggingSync(
+                        evaluateScript,
+                        pageURL: pageURL,
+                        timeout: timeout
+                    ))
+                } catch {
+                    result = .failure(error.localizedDescription)
+                }
+                resultLock.lock()
+                rawResult = result
+                resultLock.unlock()
+                CFRunLoopStop(runLoop)
+            }
+
+            let deadline = Date().addingTimeInterval(max(0.1, timeout) + 2.0)
+            while Date() < deadline {
+                resultLock.lock()
+                let isComplete = rawResult != nil
+                resultLock.unlock()
+                if isComplete { break }
+                RunLoop.current.run(mode: .default, before: Date(timeIntervalSinceNow: 0.01))
+            }
+        } else {
+            do {
+                rawResult = .success(try ChromiumBrowserHostView.evaluateJavaScriptWithRemoteDebuggingSync(
+                    evaluateScript,
+                    pageURL: pageURL,
+                    timeout: timeout
+                ))
+            } catch {
+                rawResult = .failure(error.localizedDescription)
+            }
+        }
+
+        return v2UnwrapBrowserJavaScriptEnvelope(
+            rawResult ?? .failure("Timed out waiting for Chromium JavaScript result.")
+        )
+    }
+
+    private nonisolated func v2RunBrowserJavaScript(
         _ webView: WKWebView,
         browserPanel: BrowserPanel,
         surfaceId: UUID,
@@ -6304,6 +6413,15 @@ class TerminalController {
         case .failure(let message):
             return .failure(message)
         case .success(let value):
+            return v2UnwrapBrowserJavaScriptEnvelope(.success(value))
+        }
+    }
+
+    private nonisolated func v2UnwrapBrowserJavaScriptEnvelope(_ rawResult: V2JavaScriptResult) -> V2JavaScriptResult {
+        switch rawResult {
+        case .failure(let message):
+            return .failure(message)
+        case .success(let value):
             guard let dict = value as? [String: Any],
                   let type = dict[Self.v2BrowserEvalEnvelopeTypeKey] as? String else {
                 return .success(value)
@@ -6365,6 +6483,39 @@ class TerminalController {
         let first = queue.removeFirst()
         v2BrowserDialogQueueBySurface[surfaceId] = queue
         return first
+    }
+
+    private func v2BrowserEnsureInitScriptsApplied(surfaceId: UUID, browserPanel: BrowserPanel) {
+        let scripts = v2BrowserInitScriptsBySurface[surfaceId] ?? []
+        let styles = v2BrowserInitStylesBySurface[surfaceId] ?? []
+        guard !scripts.isEmpty || !styles.isEmpty else { return }
+
+        let injector = """
+        (() => {
+          window.__cmuxInitScriptsApplied = window.__cmuxInitScriptsApplied || { scripts: [], styles: [] };
+          return true;
+        })()
+        """
+        _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: injector)
+
+        for script in scripts {
+            _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: script)
+        }
+        for css in styles {
+            let cssLiteral = v2JSONLiteral(css)
+            let styleScript = """
+            (() => {
+              const id = 'cmux-init-style-' + btoa(unescape(encodeURIComponent(\(cssLiteral)))).replace(/=+$/g, '');
+              if (document.getElementById(id)) return true;
+              const el = document.createElement('style');
+              el.id = id;
+              el.textContent = String(\(cssLiteral));
+              (document.head || document.documentElement || document.body).appendChild(el);
+              return true;
+            })()
+            """
+            _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: styleScript)
+        }
     }
 
     nonisolated func v2PNGData(from image: NSImage) -> Data? {
@@ -7430,7 +7581,7 @@ class TerminalController {
                 message: "Wait condition could not be evaluated: \(message)",
                 data: [
                     "timeout_ms": timeoutMs,
-                    "url": v2MainSync { webView.url?.absoluteString ?? "about:blank" },
+                    "url": v2MainSync { browserPanelOut.currentURL?.absoluteString ?? "about:blank" },
                     "hint": "Verify the page loaded with 'cmux browser <surface> get url' before waiting"
                 ]
             )
