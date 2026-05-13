@@ -7483,6 +7483,10 @@ extension BrowserPanel {
 
     /// Take a snapshot of the web view
     func takeSnapshot(completion: @escaping (NSImage?) -> Void) {
+        if usesChromiumEngine {
+            completion(chromiumHostView?.takeSnapshot())
+            return
+        }
         captureAutomationVisibleViewportSnapshot { result in
             switch result {
             case .success(let image):
@@ -7627,7 +7631,10 @@ extension BrowserPanel {
 
     /// Execute JavaScript
     func evaluateJavaScript(_ script: String) async throws -> Any? {
-        try await webView.evaluateJavaScript(script)
+        if usesChromiumEngine {
+            return try await chromiumContentView().evaluateJavaScript(script)
+        }
+        return try await webView.evaluateJavaScript(script)
     }
 
     // MARK: - Find in Page
@@ -7678,7 +7685,7 @@ extension BrowserPanel {
     func findNext() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let result = try? await self.webView.evaluateJavaScript(BrowserFindJavaScript.nextScript())
+            let result = try? await self.evaluateJavaScript(BrowserFindJavaScript.nextScript())
             self.parseFindResult(result)
         }
     }
@@ -7686,7 +7693,7 @@ extension BrowserPanel {
     func findPrevious() {
         Task { @MainActor [weak self] in
             guard let self else { return }
-            let result = try? await self.webView.evaluateJavaScript(BrowserFindJavaScript.previousScript())
+            let result = try? await self.evaluateJavaScript(BrowserFindJavaScript.previousScript())
             self.parseFindResult(result)
         }
     }
@@ -7880,7 +7887,7 @@ extension BrowserPanel {
             guard let self else { return }
             let js = BrowserFindJavaScript.searchScript(query: needle)
             do {
-                let result = try await self.webView.evaluateJavaScript(js)
+                let result = try await self.evaluateJavaScript(js)
                 self.parseFindResult(result)
             } catch {
                 NSLog("Find: browser JS search error: %@", error.localizedDescription)
@@ -7892,7 +7899,7 @@ extension BrowserPanel {
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
-                _ = try await self.webView.evaluateJavaScript(BrowserFindJavaScript.clearScript())
+                _ = try await self.evaluateJavaScript(BrowserFindJavaScript.clearScript())
             } catch {
                 NSLog("Find: browser JS clear error: %@", error.localizedDescription)
             }
@@ -8466,10 +8473,83 @@ extension BrowserPanel {
         if let isLoading = state.isLoading {
             self.isLoading = isLoading
             estimatedProgress = isLoading ? 0.35 : 1.0
+            if isLoading {
+                faviconPNGData = nil
+            } else {
+                refreshChromiumFavicon()
+            }
+        }
+        if let isFullscreen = state.isFullscreen {
+            isElementFullscreenActive = isFullscreen
         }
         nativeCanGoBack = state.canGoBack
         nativeCanGoForward = state.canGoForward
         refreshNavigationAvailability()
+    }
+
+    private func refreshChromiumFavicon() {
+        guard let currentURL,
+              let iconURL = URL(string: "/favicon.ico", relativeTo: currentURL)?.absoluteURL else {
+            faviconPNGData = nil
+            return
+        }
+
+        faviconTask?.cancel()
+        faviconRefreshGeneration &+= 1
+        let generation = faviconRefreshGeneration
+        faviconTask = Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                let (data, response) = try await URLSession.shared.data(from: iconURL)
+                guard self.isCurrentFaviconRefresh(generation: generation),
+                      let httpResponse = response as? HTTPURLResponse,
+                      (200..<300).contains(httpResponse.statusCode),
+                      let image = NSImage(data: data),
+                      let tiff = image.tiffRepresentation,
+                      let bitmap = NSBitmapImageRep(data: tiff),
+                      let png = bitmap.representation(using: .png, properties: [:]) else {
+                    return
+                }
+                self.faviconPNGData = png
+            } catch {
+                if self.isCurrentFaviconRefresh(generation: generation) {
+                    self.faviconPNGData = nil
+                }
+            }
+        }
+    }
+
+    func handleChromiumDownloadEvent(_ rawEvent: [String: Any]) {
+        let status = (rawEvent["status"] as? String) ?? "progress"
+        if status == "started" {
+            beginDownloadActivity()
+        } else if status == "finished" || status == "failed" {
+            endDownloadActivity()
+        }
+
+        var event: [String: Any] = [
+            "type": status
+        ]
+        for key in ["filename", "url", "path"] {
+            if let value = rawEvent[key] as? String, !value.isEmpty {
+                event[key] = value
+            }
+        }
+        for key in ["id", "receivedBytes", "totalBytes"] {
+            if let value = rawEvent[key] {
+                event[key] = value
+            }
+        }
+
+        NotificationCenter.default.post(
+            name: .browserDownloadEventDidArrive,
+            object: self,
+            userInfo: [
+                "surfaceId": id,
+                "workspaceId": workspaceId,
+                "event": event
+            ]
+        )
     }
 
     private func abandonRestoredSessionHistoryIfNeeded() {
@@ -8632,6 +8712,9 @@ private extension BrowserPanel {
             return false
         }
         webView.pageZoom = clamped
+        if usesChromiumEngine {
+            chromiumContentView().setPageZoomFactor(clamped)
+        }
         return true
     }
 
