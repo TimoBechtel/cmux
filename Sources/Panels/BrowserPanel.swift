@@ -5215,6 +5215,11 @@ extension BrowserPanel {
     }
 
     func findNext() {
+        if usesChromiumEngine {
+            guard let needle = searchState?.needle, !needle.isEmpty else { return }
+            chromiumContentView().find(needle, forward: true, findNext: true)
+            return
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let result = try? await self.evaluateJavaScript(BrowserFindJavaScript.nextScript())
@@ -5223,6 +5228,11 @@ extension BrowserPanel {
     }
 
     func findPrevious() {
+        if usesChromiumEngine {
+            guard let needle = searchState?.needle, !needle.isEmpty else { return }
+            chromiumContentView().find(needle, forward: false, findNext: true)
+            return
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let result = try? await self.evaluateJavaScript(BrowserFindJavaScript.previousScript())
@@ -5254,6 +5264,10 @@ extension BrowserPanel {
             searchState?.total = nil
             return
         }
+        if usesChromiumEngine {
+            chromiumContentView().find(needle, forward: true, findNext: false)
+            return
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             let js = BrowserFindJavaScript.searchScript(query: needle)
@@ -5267,6 +5281,10 @@ extension BrowserPanel {
     }
 
     private func executeFindClear() {
+        if usesChromiumEngine {
+            chromiumHostView?.stopFinding(clearSelection: true)
+            return
+        }
         Task { @MainActor [weak self] in
             guard let self else { return }
             do {
@@ -5288,6 +5306,13 @@ extension BrowserPanel {
         }
         searchState?.total = UInt(total)
         searchState?.selected = total > 0 ? UInt(current) : nil
+    }
+
+    func applyChromiumFindResult(count: Int, activeMatchOrdinal: Int) {
+        guard usesChromiumEngine else { return }
+        let total = max(0, count)
+        searchState?.total = UInt(total)
+        searchState?.selected = total > 0 && activeMatchOrdinal > 0 ? UInt(activeMatchOrdinal - 1) : nil
     }
 
     func setBrowserThemeMode(_ mode: BrowserThemeMode) {
