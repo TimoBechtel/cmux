@@ -2884,11 +2884,7 @@ class GhosttyApp {
                let sourceSurface = surfaceView.terminalSurface {
                 let change = GhosttyTitleChange(tabId: tabId, surfaceId: sourceSurface.id, title: title)
                 DispatchQueue.main.async {
-                    NotificationCenter.default.post(
-                        name: .ghosttyDidSetTitle,
-                        object: sourceSurface,
-                        userInfo: change.userInfo
-                    )
+                    TerminalTitleNotificationCoalescer.shared.enqueue(change)
                 }
             }
             return true
@@ -3331,6 +3327,62 @@ private final class TerminalSharedBackdropCutoutFilter: CIFilter {
         return CIBlendKernel.destinationOut.apply(
             foreground: inputImage,
             background: inputBackgroundImage
+        )
+    }
+}
+
+@MainActor
+final class TerminalTitleNotificationCoalescer {
+    static let shared = TerminalTitleNotificationCoalescer()
+
+    private let interval: CFTimeInterval = 0.25
+    private var lastTitles: [GhosttyTitleChange.Key: String] = [:]
+    private var lastTimes: [GhosttyTitleChange.Key: CFTimeInterval] = [:]
+    private var pending: [GhosttyTitleChange.Key: GhosttyTitleChange] = [:]
+    private var flushes: [GhosttyTitleChange.Key: DispatchWorkItem] = [:]
+
+    func enqueue(_ change: GhosttyTitleChange) {
+        let key = change.key
+        guard lastTitles[key] != change.title else { return }
+
+        let now = CACurrentMediaTime()
+        let elapsed = now - (lastTimes[key] ?? 0)
+        guard elapsed < interval else {
+            flushes[key]?.cancel()
+            flushes[key] = nil
+            pending.removeValue(forKey: key)
+            post(change, now: now)
+            return
+        }
+
+        pending[key] = change
+        guard flushes[key] == nil else { return }
+
+        let flush = DispatchWorkItem { [weak self] in self?.flush(key) }
+        flushes[key] = flush
+        let delay = interval - elapsed
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: flush)
+    }
+
+    private func flush(_ key: GhosttyTitleChange.Key) {
+        flushes[key] = nil
+        guard let change = pending.removeValue(forKey: key),
+              lastTitles[key] != change.title else {
+            return
+        }
+
+        post(change, now: CACurrentMediaTime())
+    }
+
+    private func post(_ change: GhosttyTitleChange, now: CFTimeInterval) {
+        let key = change.key
+        guard lastTitles[key] != change.title else { return }
+        lastTitles[key] = change.title
+        lastTimes[key] = now
+        NotificationCenter.default.post(
+            name: .ghosttyDidSetTitle,
+            object: nil,
+            userInfo: change.userInfo
         )
     }
 }
