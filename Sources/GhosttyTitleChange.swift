@@ -2,6 +2,11 @@ import Foundation
 
 /// Typed payload for `.ghosttyDidSetTitle` notifications.
 struct GhosttyTitleChange: Equatable, Sendable {
+    struct Key: Hashable {
+        let tabId: UUID
+        let surfaceId: UUID
+    }
+
     let tabId: UUID
     let surfaceId: UUID
     let title: String
@@ -27,5 +32,9 @@ struct GhosttyTitleChange: Equatable, Sendable {
             GhosttyNotificationKey.surfaceId: surfaceId,
             GhosttyNotificationKey.title: title,
         ]
+    }
+
+    var key: Key {
+        Key(tabId: tabId, surfaceId: surfaceId)
     }
 }
