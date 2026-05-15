@@ -17,8 +17,6 @@ concurrency:
 env:
   APP_NAME: cmux Chromium
   APP_BUNDLE_ID: com.timobechtel.cmuxterm.app.chromium
-  RELEASE_TAG: chromium-latest
-  RELEASE_TITLE: cmux Chromium latest
   ARTIFACT_NAME: cmux-chromium-macos-arm64.zip
 
 jobs:
@@ -197,10 +195,10 @@ jobs:
             echo
             echo "- build sha: \`$BUILD_SHA\`"
             echo "- current main sha: \`$CURRENT_MAIN_SHA\`"
-            echo "- publish chromium-latest: \`$STILL_CURRENT\`"
+            echo "- publish release: \`$STILL_CURRENT\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Publish latest Chromium release
+      - name: Publish Chromium release
         if: github.event_name != 'pull_request' && github.ref_name == 'main' && steps.current-head.outputs.still-current == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
@@ -208,9 +206,11 @@ jobs:
         run: |
           set -euo pipefail
           ASSET_PATH="artifacts/${ARTIFACT_NAME}"
+          RELEASE_TAG="chromium-${DEV_VERSION}"
+          RELEASE_TITLE="cmux Chromium ${DEV_VERSION}"
           RELEASE_NOTES="$(mktemp)"
           cat > "$RELEASE_NOTES" <<EOF
-          Latest unsigned cmux Chromium build from this fork.
+          Unsigned cmux Chromium build from this fork.
 
           - App: ${APP_NAME}
           - Bundle ID: ${APP_BUNDLE_ID}
@@ -218,24 +218,14 @@ jobs:
           - Commit: ${SHORT_SHA}
           - Branch: ${GITHUB_REF_NAME}
           - Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}
+          - Asset: ${ARTIFACT_NAME}
+          - Latest download: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/latest/download/${ARTIFACT_NAME}
 
           This build is arm64-only and is not Apple-notarized.
           EOF
 
-          git tag -f "$RELEASE_TAG" "$GITHUB_SHA"
-          git push -f origin "refs/tags/${RELEASE_TAG}"
-
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release edit "$RELEASE_TAG" \
-              --title "$RELEASE_TITLE" \
-              --notes-file "$RELEASE_NOTES" \
-              --latest
-            gh release delete-asset "$RELEASE_TAG" "$ARTIFACT_NAME" --yes >/dev/null 2>&1 || true
-          else
-            gh release create "$RELEASE_TAG" \
-              --title "$RELEASE_TITLE" \
-              --notes-file "$RELEASE_NOTES" \
-              --latest
-          fi
-
-          gh release upload "$RELEASE_TAG" "$ASSET_PATH" --clobber
+          gh release create "$RELEASE_TAG" "$ASSET_PATH" \
+            --target "$GITHUB_SHA" \
+            --title "$RELEASE_TITLE" \
+            --notes-file "$RELEASE_NOTES" \
+            --latest
