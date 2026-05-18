@@ -4,12 +4,17 @@ An experimental cmux fork that adds Chromium as browser engine.
 
 WebKit does not work well for web dev for me (especially Tailwind), so this adds Chromium as browser engine.
 
-Download the latest build from [GitHub Releases](https://github.com/TimoBechtel/cmux/releases/tag/chromium-latest), unzip it, and move `cmux.app` to `/Applications`.
+## Install
+
+```sh
+brew install --cask TimoBechtel/tap/cmux-chromium
+```
+
 
 These builds are unsigned for now. If macOS blocks the app, run:
 
 ```sh
-xattr -dr com.apple.quarantine /Applications/cmux.app
+xattr -dr com.apple.quarantine "/Applications/cmux Chromium.app"
 ```
 
 The upstream README starts below.
