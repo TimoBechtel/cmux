@@ -2900,6 +2900,7 @@ final class BrowserPanel: Panel, ObservableObject {
     var isMainFrameProvisionalNavigationActive: Bool = false
     private var chromiumBackHistoryURLStrings: [String] = []
     private var chromiumForwardHistoryURLStrings: [String] = []
+    private var pendingChromiumRestorePageZoom: CGFloat?
 
     /// Published estimated progress (0.0 - 1.0)
     @Published private(set) var estimatedProgress: Double = 0.0
@@ -3266,7 +3267,10 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     private func hiddenWebViewDiscardBlockers() -> [String] {
-        hiddenWebViewDiscardManager.blockers(for: hiddenWebViewDiscardSnapshot)
+        if usesChromiumEngine {
+            return hiddenChromiumWebViewDiscardBlockers()
+        }
+        return hiddenWebViewDiscardManager.blockers(for: hiddenWebViewDiscardSnapshot)
     }
 
     private func scheduleHiddenWebViewDiscardIfNeeded(reason: String, now: Date = Date()) {
@@ -3292,6 +3296,9 @@ final class BrowserPanel: Panel, ObservableObject {
 
     @discardableResult
     func discardHiddenWebViewForMemory(reason: String, now: Date = Date()) -> Bool {
+        if usesChromiumEngine {
+            return discardHiddenChromiumWebViewForMemory(reason: reason, now: now)
+        }
         let blockers = hiddenWebViewDiscardBlockers()
         guard blockers.isEmpty else { return false }
 
@@ -3361,6 +3368,34 @@ final class BrowserPanel: Panel, ObservableObject {
     }
 
     var hasPendingRemoteNavigation: Bool { pendingRemoteNavigation != nil }
+
+    @discardableResult
+    func restoreDiscardedWebViewIfNeeded(
+        reason: String,
+        cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
+    ) -> Bool {
+        if usesChromiumEngine {
+            return restoreDiscardedChromiumWebViewIfNeeded(reason: reason)
+        }
+        return hiddenWebViewDiscardManager.restoreIfNeeded(reason: reason) {
+            shouldRenderWebView = true
+            guard let restoreURL = restoredHistoryCurrentURL ?? currentURL else {
+                refreshNavigationAvailability()
+                return
+            }
+            navigateWithoutInsecureHTTPPrompt(
+                to: restoreURL,
+                recordTypedNavigation: false,
+                preserveRestoredSessionHistory: true,
+                cachePolicy: cachePolicy
+            )
+        }
+    }
+
+    private func clearWebViewDiscardState(reason: String) {
+        guard hiddenWebViewDiscardManager.clearDiscardState(reason: reason) else { return }
+        refreshWebViewLifecycleState()
+    }
 
     @discardableResult
     func reactivateDiscardedWebViewWithoutNavigation(reason: String) -> Bool {
@@ -5789,7 +5824,7 @@ final class BrowserPanel: Panel, ObservableObject {
         }
         let effectiveRequest = remoteProxyPreparedRequest(from: request, logScope: "rewrite")
         if usesChromiumEngine {
-            restoredSessionShouldRenderWebView = nil
+            hiddenWebViewDiscardManager.updateRestoredSessionRenderIntent(nil)
             shouldRenderWebView = true
             currentURL = Self.remoteProxyDisplayURL(for: effectiveRequest.url) ?? originalURL
             pageTitle = currentURL?.host ?? currentURL?.absoluteString ?? ""
@@ -6265,6 +6300,100 @@ private func browserDottedHostWithPortCandidate(_ input: String, schemeCandidate
     return rest.isEmpty || rest.first == "/" || rest.first == "?" || rest.first == "#"
 }
 
+private extension BrowserPanel {
+    func hiddenChromiumWebViewDiscardBlockers() -> [String] {
+        var blockers = hiddenWebViewDiscardManager.blockers(for: chromiumHiddenWebViewDiscardSnapshot)
+        if chromiumHostView?.hasLiveBrowser != true { blockers.append("no_live_browser") }
+        return blockers
+    }
+
+    var chromiumHiddenWebViewDiscardSnapshot: BrowserHiddenWebViewDiscardManager.BlockerSnapshot {
+        BrowserHiddenWebViewDiscardManager.BlockerSnapshot(
+            isClosing: isClosingWebViewLifecycle,
+            isVisibleInUI: isWebViewVisibleInUI,
+            shouldRenderWebView: shouldRenderWebView,
+            hasPendingRemoteNavigation: pendingRemoteNavigation != nil,
+            hasCurrentURL: (currentURL ?? restoredHistoryCurrentURL) != nil,
+            isLoading: isLoading,
+            webViewIsLoading: false,
+            hasActiveMainFrameProvisionalNavigation: false,
+            isDownloading: isDownloading,
+            activeDownloadCount: activeDownloadCount,
+            preferredDeveloperToolsVisible: preferredDeveloperToolsVisible,
+            isDeveloperToolsVisible: chromiumDeveloperToolsVisible,
+            isElementFullscreenActive: isElementFullscreenActive,
+            isReactGrabActive: isReactGrabActive,
+            isVisualAutomationCaptureActive: activeVisualAutomationCaptureCount > 0,
+            hasPopups: chromiumHostView?.hasOpenPopups == true,
+            isCapturingMedia: false,
+            isPlayingMedia: isPlayingMedia
+        )
+    }
+
+    func discardHiddenChromiumWebViewForMemory(reason: String, now: Date) -> Bool {
+        let blockers = hiddenWebViewDiscardBlockers()
+        guard blockers.isEmpty else { return false }
+        guard let oldHost = chromiumHostView else { return false }
+
+        cancelHiddenWebViewDiscard()
+
+        oldHost.refreshNavigationEntries()
+        let restoreURL = currentURL ?? restoredHistoryCurrentURL
+        let history = sessionNavigationHistorySnapshot()
+        let historyCurrentURL = preferredURLStringForOmnibar() ?? restoreURL?.absoluteString
+        pendingChromiumRestorePageZoom = oldHost.currentPageZoomFactor
+
+        invalidateSearchFocusRequests(reason: "chromiumDiscard")
+        searchState = nil
+        loadingEndWorkItem?.cancel()
+        loadingEndWorkItem = nil
+        faviconTask?.cancel()
+        faviconTask = nil
+        faviconRefreshGeneration &+= 1
+        loadingGeneration &+= 1
+
+        oldHost.discardBrowserForMemory()
+        chromiumHostView = nil
+        hiddenWebViewDiscardManager.markDiscarded(reason: reason, now: now)
+        currentURL = restoreURL
+        shouldRenderWebView = false
+        nativeCanGoBack = false
+        nativeCanGoForward = false
+        isLoading = false
+        estimatedProgress = 0
+        chromiumBackHistoryURLStrings.removeAll(keepingCapacity: false)
+        chromiumForwardHistoryURLStrings.removeAll(keepingCapacity: false)
+
+        restoreSessionNavigationHistory(
+            backHistoryURLStrings: history.backHistoryURLStrings,
+            forwardHistoryURLStrings: history.forwardHistoryURLStrings,
+            currentURLString: historyCurrentURL
+        )
+        refreshNavigationAvailability()
+        refreshWebViewLifecycleState()
+        return true
+    }
+
+    func restoreDiscardedChromiumWebViewIfNeeded(reason: String) -> Bool {
+        return hiddenWebViewDiscardManager.restoreIfNeeded(reason: reason) {
+            shouldRenderWebView = true
+            guard let restoreURL = restoredHistoryCurrentURL ?? currentURL else {
+                refreshNavigationAvailability()
+                return
+            }
+            navigateWithoutInsecureHTTPPrompt(
+                to: restoreURL,
+                recordTypedNavigation: false,
+                preserveRestoredSessionHistory: true
+            )
+            if let pageZoom = pendingChromiumRestorePageZoom {
+                chromiumContentView().setPageZoomFactor(pageZoom)
+                pendingChromiumRestorePageZoom = nil
+            }
+        }
+    }
+}
+
 extension BrowserPanel {
     private func cancelInFlightNavigationBeforeHistoryTraversal() {
         guard webView.isLoading || isMainFrameProvisionalNavigationActive else { return }
@@ -6309,7 +6438,10 @@ extension BrowserPanel {
                     preserveRestoredSessionHistory: true
                 )
             case .nativeGoBack:
-                if chromiumGoBackIfNeeded() { return }
+                if usesChromiumEngine {
+                    _ = chromiumGoBackIfNeeded()
+                    return
+                }
                 webView.goBack()
             case .nativeGoForward, .refreshOnly:
                 refreshNavigationAvailability()
@@ -6317,7 +6449,10 @@ extension BrowserPanel {
             return
         }
 
-        if chromiumGoBackIfNeeded() { return }
+        if usesChromiumEngine {
+            _ = chromiumGoBackIfNeeded()
+            return
+        }
         webView.goBack()
     }
 
@@ -6335,7 +6470,10 @@ extension BrowserPanel {
             )
             switch decision {
             case .nativeGoForward:
-                if chromiumGoForwardIfNeeded() { return }
+                if usesChromiumEngine {
+                    _ = chromiumGoForwardIfNeeded()
+                    return
+                }
                 webView.goForward()
             case .navigate(let targetURL):
                 refreshNavigationAvailability()
@@ -6350,7 +6488,10 @@ extension BrowserPanel {
             return
         }
 
-        if chromiumGoForwardIfNeeded() { return }
+        if usesChromiumEngine {
+            _ = chromiumGoForwardIfNeeded()
+            return
+        }
         webView.goForward()
     }
 
@@ -6464,7 +6605,13 @@ extension BrowserPanel {
 
     /// Reload the current page
     func reload() {
-        if chromiumReloadIfNeeded() { return }
+        if usesChromiumEngine {
+            if restoreDiscardedWebViewIfNeeded(reason: "reload") {
+                return
+            }
+            _ = chromiumReloadIfNeeded()
+            return
+        }
         if prepareForReload(reason: "reload", mode: .soft) {
             return
         }
@@ -6481,7 +6628,10 @@ extension BrowserPanel {
 
     /// Stop loading
     func stopLoading() {
-        if chromiumStopLoadingIfNeeded() { return }
+        if usesChromiumEngine {
+            _ = chromiumStopLoadingIfNeeded()
+            return
+        }
         // Fail closed: a reveal must never blank-shell-heal over an explicit Stop.
         userStoppedLoadSinceWebViewReplacement = true
         webView.stopLoading()
@@ -7214,6 +7364,7 @@ extension BrowserPanel {
     /// Execute JavaScript
     func evaluateJavaScript(_ script: String) async throws -> Any? {
         if usesChromiumEngine {
+            _ = restoreDiscardedWebViewIfNeeded(reason: "javascript")
             return try await chromiumContentView().evaluateJavaScript(script)
         }
         return try await webView.evaluateJavaScript(script)
@@ -8176,7 +8327,11 @@ private extension BrowserPanel {
         }
         webView.pageZoom = clamped
         if usesChromiumEngine {
-            chromiumContentView().setPageZoomFactor(clamped)
+            if hiddenWebViewDiscardManager.isDiscardedForMemory {
+                pendingChromiumRestorePageZoom = clamped
+            } else {
+                chromiumContentView().setPageZoomFactor(clamped)
+            }
         }
         return true
     }
