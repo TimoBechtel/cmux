@@ -3,6 +3,7 @@ import AppKit
 
 struct ChromiumViewRepresentable: NSViewRepresentable {
     @ObservedObject var panel: BrowserPanel
+    let shouldAcceptContentFocusEvents: Bool
     let shouldFocusWebView: Bool
     let isPanelFocused: Bool
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
@@ -12,6 +13,7 @@ struct ChromiumViewRepresentable: NSViewRepresentable {
     }
 
     func updateNSView(_ nsView: ChromiumBrowserHostView, context: Context) {
+        nsView.acceptsContentFocusEvents = shouldAcceptContentFocusEvents
         nsView.setSearchOverlay(searchOverlay)
         nsView.needsLayout = true
         nsView.layoutSubtreeIfNeeded()
