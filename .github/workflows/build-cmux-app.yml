@@ -164,6 +164,34 @@ jobs:
           /usr/libexec/PlistBuddy -c "Set :SUEnableAutomaticChecks false" "$APP_PLIST"
           /usr/libexec/PlistBuddy -c "Set :SUAutomaticallyUpdate false" "$APP_PLIST"
 
+      - name: Ad-hoc sign fork app bundle
+        run: |
+          set -euo pipefail
+          APP="build-cmux-app/Build/Products/Release/${APP_NAME}.app"
+          SIGN_COMMON=(--force --sign - --timestamp=none --generate-entitlement-der)
+
+          xattr -cr "$APP"
+
+          for helper in "$APP/Contents/Resources/bin"/*; do
+            [[ -f "$helper" && -x "$helper" ]] || continue
+            /usr/bin/codesign "${SIGN_COMMON[@]}" "$helper"
+          done
+
+          if [[ -d "$APP/Contents/PlugIns" ]]; then
+            while IFS= read -r -d '' plugin; do
+              /usr/bin/codesign "${SIGN_COMMON[@]}" --deep "$plugin"
+            done < <(find "$APP/Contents/PlugIns" -mindepth 1 -maxdepth 1 -print0)
+          fi
+
+          if [[ -d "$APP/Contents/Frameworks" ]]; then
+            while IFS= read -r -d '' framework; do
+              /usr/bin/codesign "${SIGN_COMMON[@]}" --deep "$framework"
+            done < <(find "$APP/Contents/Frameworks" -mindepth 1 -maxdepth 1 -print0)
+          fi
+
+          /usr/bin/codesign "${SIGN_COMMON[@]}" "$APP"
+          /usr/bin/codesign --verify --deep --strict --verbose=2 "$APP"
+
       - name: Package app artifact
         run: |
           set -euo pipefail
@@ -210,7 +238,7 @@ jobs:
           RELEASE_TITLE="cmux Chromium ${DEV_VERSION}"
           RELEASE_NOTES="$(mktemp)"
           cat > "$RELEASE_NOTES" <<EOF
-          Unsigned cmux Chromium build from this fork.
+          Ad-hoc signed cmux Chromium build from this fork.
 
           - App: ${APP_NAME}
           - Bundle ID: ${APP_BUNDLE_ID}
