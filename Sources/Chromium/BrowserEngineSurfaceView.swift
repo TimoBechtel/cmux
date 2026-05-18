@@ -11,12 +11,14 @@ struct BrowserEngineSurfaceView: View {
     let portalZPriority: Int
     let paneDropZone: DropZone?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
+    let omnibarSuggestions: BrowserPortalOmnibarSuggestionsConfiguration?
     let paneTopChromeHeight: CGFloat
 
     var body: some View {
         if panel.usesChromiumEngine {
             ChromiumViewRepresentable(
                 panel: panel,
+                shouldAcceptContentFocusEvents: shouldAttachWebView,
                 shouldFocusWebView: shouldFocusWebView,
                 isPanelFocused: isPanelFocused,
                 searchOverlay: searchOverlay
@@ -32,6 +34,7 @@ struct BrowserEngineSurfaceView: View {
                 portalZPriority: portalZPriority,
                 paneDropZone: paneDropZone,
                 searchOverlay: searchOverlay,
+                omnibarSuggestions: omnibarSuggestions,
                 paneTopChromeHeight: paneTopChromeHeight
             )
         }
