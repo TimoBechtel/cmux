@@ -2001,10 +2001,11 @@ class GhosttyApp {
         runtimeConfig.userdata = Unmanaged.passUnretained(self).toOpaque()
         runtimeConfig.supports_selection_clipboard = true
         runtimeConfig.wakeup_cb = { userdata in
-            GhosttyApp.shared.scheduleTick()
+            GhosttyApp.app(fromRuntimeUserdata: userdata)?.scheduleTick()
         }
         runtimeConfig.action_cb = { app, target, action in
-            return GhosttyApp.shared.handleAction(target: target, action: action)
+            guard let app = GhosttyApp.app(fromRuntimeApp: app) else { return false }
+            return app.handleAction(target: target, action: action)
         }
         // Some GhosttyKit builds import this callback as returning `Void` in Swift even
         // though the C ABI returns `bool`. Store the C-compatible shim explicitly so the
@@ -3751,6 +3752,16 @@ class GhosttyApp {
     private static func callbackContext(from userdata: UnsafeMutableRawPointer?) -> GhosttySurfaceCallbackContext? {
         guard let userdata else { return nil }
         return Unmanaged<GhosttySurfaceCallbackContext>.fromOpaque(userdata).takeUnretainedValue()
+    }
+
+    private static func app(fromRuntimeUserdata userdata: UnsafeMutableRawPointer?) -> GhosttyApp? {
+        guard let userdata else { return nil }
+        return Unmanaged<GhosttyApp>.fromOpaque(userdata).takeUnretainedValue()
+    }
+
+    private static func app(fromRuntimeApp app: ghostty_app_t?) -> GhosttyApp? {
+        guard let app else { return nil }
+        return self.app(fromRuntimeUserdata: ghostty_app_userdata(app))
     }
 
     private func handleAction(target: ghostty_target_s, action: ghostty_action_s) -> Bool {
