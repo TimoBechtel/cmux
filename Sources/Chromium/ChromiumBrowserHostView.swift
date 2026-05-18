@@ -404,6 +404,32 @@ final class ChromiumBrowserHostView: NSView {
         cmux_chromium_set_zoom_level(browserHandle, Self.chromiumZoomLevel(for: factor))
     }
 
+    var currentPageZoomFactor: CGFloat {
+        pageZoomFactor
+    }
+
+    var hasLiveBrowser: Bool {
+        browserHandle != nil
+    }
+
+    var hasOpenPopups: Bool {
+        guard let browserHandle else { return false }
+        return cmux_chromium_has_open_popups(browserHandle)
+    }
+
+    func discardBrowserForMemory() {
+        if ownsFirstResponder {
+            _ = window?.makeFirstResponder(nil)
+        }
+        setBrowserFocused(false)
+        closeDeveloperTools()
+        guard let browserHandle else { return }
+        stopObservingBrowserNotifications(for: browserNotificationObject)
+        browserNotificationObject = nil
+        self.browserHandle = nil
+        cmux_chromium_dispose_browser(browserHandle)
+    }
+
     func find(_ searchText: String, forward: Bool, findNext: Bool) {
         guard let browserHandle else { return }
         searchText.withCString { text in
