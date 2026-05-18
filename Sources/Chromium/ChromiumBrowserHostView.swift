@@ -122,6 +122,7 @@ final class ChromiumBrowserHostView: NSView {
     var onFindResult: ((Int, Int) -> Void)?
     var onContextMenuMoveTabToNewWorkspace: (() -> Bool)?
     var onCloseRequested: (() -> Void)?
+    var acceptsContentFocusEvents = true
 
     init(initialURL: URL?) {
         pendingURL = initialURL
@@ -278,7 +279,8 @@ final class ChromiumBrowserHostView: NSView {
     }
 
     private func handleContentFocusEvent(_ event: NSEvent) {
-        guard event.window === window,
+        guard acceptsContentFocusEvents,
+              event.window === window,
               !isHiddenOrHasHiddenAncestor else {
             return
         }
