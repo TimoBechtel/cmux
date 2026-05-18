@@ -255,26 +255,26 @@ extension BrowserPanel {
     }
 
     func chromiumGoBackIfNeeded() -> Bool {
-        guard usesChromiumEngine else { return false }
-        chromiumHostView?.goBack()
+        guard usesChromiumEngine, let chromiumHostView else { return false }
+        chromiumHostView.goBack()
         return true
     }
 
     func chromiumGoForwardIfNeeded() -> Bool {
-        guard usesChromiumEngine else { return false }
-        chromiumHostView?.goForward()
+        guard usesChromiumEngine, let chromiumHostView else { return false }
+        chromiumHostView.goForward()
         return true
     }
 
     func chromiumReloadIfNeeded() -> Bool {
-        guard usesChromiumEngine else { return false }
-        chromiumHostView?.reload()
+        guard usesChromiumEngine, let chromiumHostView else { return false }
+        chromiumHostView.reload()
         return true
     }
 
     func chromiumStopLoadingIfNeeded() -> Bool {
-        guard usesChromiumEngine else { return false }
-        chromiumHostView?.stopLoading()
+        guard usesChromiumEngine, let chromiumHostView else { return false }
+        chromiumHostView.stopLoading()
         return true
     }
 
