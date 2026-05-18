@@ -26,6 +26,7 @@ void cmux_chromium_set_focus(void *browserHandle, BOOL focus);
 void cmux_chromium_set_zoom_level(void *browserHandle, double zoomLevel);
 void cmux_chromium_find(void *browserHandle, const char *searchText, BOOL forward, BOOL findNext);
 void cmux_chromium_stop_finding(void *browserHandle, BOOL clearSelection);
+BOOL cmux_chromium_has_open_popups(void *browserHandle);
 BOOL cmux_chromium_has_dev_tools(void *browserHandle);
 void cmux_chromium_show_dev_tools(void *browserHandle);
 void cmux_chromium_close_dev_tools(void *browserHandle);
