@@ -1898,6 +1898,13 @@ void cmux_chromium_stop_finding(void *browserHandle, BOOL clearSelection) {
     host->base.release(&host->base);
 }
 
+BOOL cmux_chromium_has_open_popups(void *browserHandle) {
+    cmux_chromium_browser_t *handle = (cmux_chromium_browser_t *)browserHandle;
+    if (!handle || !handle->client) return NO;
+    if (!handle->child_popups.empty()) return YES;
+    return handle->client->allowed_popup_controller || handle->client->allowed_popup_client;
+}
+
 BOOL cmux_chromium_has_dev_tools(void *browserHandle) {
     cmux_chromium_browser_t *handle = (cmux_chromium_browser_t *)browserHandle;
     if (!handle || !handle->browser) return NO;
