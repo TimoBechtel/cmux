@@ -17,6 +17,9 @@ struct ChromiumViewRepresentable: NSViewRepresentable {
         nsView.setSearchOverlay(searchOverlay)
         nsView.needsLayout = true
         nsView.layoutSubtreeIfNeeded()
+        if nsView.window != nil {
+            panel.releaseChromiumBackgroundPreloadHostIfAttachedToRealWindow(reason: "representable.update")
+        }
         if shouldFocusWebView {
             nsView.focusBrowserContent()
         } else if !isPanelFocused {
