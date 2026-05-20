@@ -2275,7 +2275,10 @@ class GhosttyApp {
         if startupPreviewProfile.loadsRealUserConfig {
             ghostty_config_load_default_files(config)
             loadLegacyGhosttyConfigIfNeeded(config)
-            loadCmuxAppSupportGhosttyConfigIfNeeded(config)
+            loadCmuxAppSupportGhosttyConfigIfNeeded(
+                config,
+                preferredColorScheme: preferredColorScheme
+            )
             ghostty_config_load_recursive_files(config)
             if Self.shouldApplyManagedDefaultAppearance() {
                 loadCmuxDefaultAppearanceConfig(
@@ -2293,7 +2296,10 @@ class GhosttyApp {
         #else
         ghostty_config_load_default_files(config)
         loadLegacyGhosttyConfigIfNeeded(config)
-        loadCmuxAppSupportGhosttyConfigIfNeeded(config)
+        loadCmuxAppSupportGhosttyConfigIfNeeded(
+            config,
+            preferredColorScheme: preferredColorScheme
+        )
         ghostty_config_load_recursive_files(config)
         if Self.shouldApplyManagedDefaultAppearance() {
             loadCmuxDefaultAppearanceConfig(
@@ -3101,7 +3107,10 @@ class GhosttyApp {
         return true
     }
 
-    private func loadCmuxAppSupportGhosttyConfigIfNeeded(_ config: ghostty_config_t) {
+    private func loadCmuxAppSupportGhosttyConfigIfNeeded(
+        _ config: ghostty_config_t,
+        preferredColorScheme: GhosttyConfig.ColorSchemePreference
+    ) {
         #if os(macOS)
         let fm = FileManager.default
         guard let appSupport = fm.urls(for: .applicationSupportDirectory, in: .userDomainMask).first else { return }
@@ -3115,8 +3124,20 @@ class GhosttyApp {
         guard !urls.isEmpty else { return }
 
         for url in urls {
-            url.path.withCString { path in
-                ghostty_config_load_file(config, path)
+            guard let contents = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let resolvedContents = GhosttyConfig.resolvingThemeDirectives(
+                in: contents,
+                preferredColorScheme: preferredColorScheme
+            )
+            resolvedContents.withCString { configString in
+                url.path.withCString { path in
+                    ghostty_config_load_string(
+                        config,
+                        configString,
+                        UInt(resolvedContents.lengthOfBytes(using: .utf8)),
+                        path
+                    )
+                }
             }
         }
 

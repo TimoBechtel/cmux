@@ -612,6 +612,33 @@ struct GhosttyConfig {
         return lastValue
     }
 
+    static func resolvingThemeDirectives(
+        in contents: String,
+        preferredColorScheme: ColorSchemePreference
+    ) -> String {
+        contents
+            .split(separator: "\n", omittingEmptySubsequences: false)
+            .map { line -> String in
+                let rawLine = String(line)
+                let trimmed = rawLine.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !trimmed.isEmpty, !trimmed.hasPrefix("#") else { return rawLine }
+
+                let parts = trimmed.split(separator: "=", maxSplits: 1).map(String.init)
+                guard parts.count == 2,
+                      parts[0].trimmingCharacters(in: .whitespacesAndNewlines) == "theme" else {
+                    return rawLine
+                }
+
+                let value = parts[1]
+                    .trimmingCharacters(in: .whitespacesAndNewlines)
+                    .trimmingCharacters(in: CharacterSet(charactersIn: "\""))
+                guard !value.isEmpty else { return rawLine }
+
+                return "theme = \(resolveThemeName(from: value, preferredColorScheme: preferredColorScheme))"
+            }
+            .joined(separator: "\n")
+    }
+
     static func themeNameCandidates(from rawName: String) -> [String] {
         var candidates: [String] = []
         let compatibilityAliasGroups: [[String]] = [
