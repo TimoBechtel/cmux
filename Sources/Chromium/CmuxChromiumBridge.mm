@@ -837,14 +837,57 @@ static NSDictionary *CmuxChromiumPermissionPromptConfiguration(NSString *origin,
     };
 }
 
-static NSWindow *CmuxChromiumBrowserWindow(cef_browser_t *browser) {
+static NSView *CmuxChromiumBrowserView(cef_browser_t *browser) {
     if (!browser) return nil;
     cef_browser_host_t *host = browser->get_host(browser);
     if (!host) return nil;
     void *window_handle = host->get_window_handle(host);
     host->base.release(&host->base);
-    NSView *view = (__bridge NSView *)window_handle;
-    return view.window;
+    return (__bridge NSView *)window_handle;
+}
+
+static BOOL CmuxChromiumIsBackgroundPreloadWindow(NSWindow *window) {
+    return [window.identifier isEqualToString:@"cmux.browserBackgroundPreload"];
+}
+
+static void CmuxChromiumPresentPermissionPrompt(
+    NSView *browserView,
+    NSDictionary *configuration,
+    void (^decisionHandler)(BOOL allow),
+    NSInteger backgroundWaitAttempts
+) {
+    NSWindow *window = browserView.window;
+    if (CmuxChromiumIsBackgroundPreloadWindow(window)) {
+        if (backgroundWaitAttempts >= 600) {
+            decisionHandler(NO);
+            return;
+        }
+        dispatch_after(dispatch_time(DISPATCH_TIME_NOW, (int64_t)(0.1 * NSEC_PER_SEC)), dispatch_get_main_queue(), ^{
+            CmuxChromiumPresentPermissionPrompt(
+                browserView,
+                configuration,
+                decisionHandler,
+                backgroundWaitAttempts + 1
+            );
+        });
+        return;
+    }
+
+    NSAlert *alert = [[NSAlert alloc] init];
+    alert.alertStyle = NSAlertStyleInformational;
+    alert.messageText = configuration[@"title"] ?: @"Allow this site to use browser permissions?";
+    alert.informativeText = configuration[@"message"] ?: @"cmux will ask again next time.";
+    [alert addButtonWithTitle:configuration[@"allowTitle"] ?: @"Allow"];
+    [alert addButtonWithTitle:configuration[@"denyTitle"] ?: @"Don't Allow"];
+
+    void (^complete)(NSModalResponse) = ^(NSModalResponse response) {
+        decisionHandler(response == NSAlertFirstButtonReturn);
+    };
+    if (window) {
+        [alert beginSheetModalForWindow:window completionHandler:complete];
+    } else {
+        complete([alert runModal]);
+    }
 }
 
 static void CmuxChromiumShowPermissionPrompt(
@@ -853,24 +896,10 @@ static void CmuxChromiumShowPermissionPrompt(
     NSArray<NSString *> *permissionKeys,
     void (^decisionHandler)(BOOL allow)
 ) {
-    NSWindow *window = CmuxChromiumBrowserWindow(browser);
+    NSView *browserView = CmuxChromiumBrowserView(browser);
     NSDictionary *configuration = CmuxChromiumPermissionPromptConfiguration(origin, permissionKeys);
     dispatch_async(dispatch_get_main_queue(), ^{
-        NSAlert *alert = [[NSAlert alloc] init];
-        alert.alertStyle = NSAlertStyleInformational;
-        alert.messageText = configuration[@"title"] ?: @"Allow this site to use browser permissions?";
-        alert.informativeText = configuration[@"message"] ?: @"cmux will ask again next time.";
-        [alert addButtonWithTitle:configuration[@"allowTitle"] ?: @"Allow"];
-        [alert addButtonWithTitle:configuration[@"denyTitle"] ?: @"Don't Allow"];
-
-        void (^complete)(NSModalResponse) = ^(NSModalResponse response) {
-            decisionHandler(response == NSAlertFirstButtonReturn);
-        };
-        if (window) {
-            [alert beginSheetModalForWindow:window completionHandler:complete];
-        } else {
-            complete([alert runModal]);
-        }
+        CmuxChromiumPresentPermissionPrompt(browserView, configuration, decisionHandler, 0);
     });
 }
 
