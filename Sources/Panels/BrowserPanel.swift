@@ -4323,6 +4323,45 @@ final class BrowserPanel: Panel, ObservableObject {
 #endif
     }
 
+    private func ensureChromiumBackgroundPreloadHostIfNeeded(
+        _ chromiumView: ChromiumBrowserHostView,
+        reason: String
+    ) {
+        guard backgroundPreloadWindow == nil else { return }
+        guard chromiumView.window == nil else { return }
+        guard chromiumView.superview == nil else { return }
+
+        let frame = NSRect(x: -10_000, y: -10_000, width: 800, height: 600)
+        let window = NSWindow(
+            contentRect: frame,
+            styleMask: [.borderless],
+            backing: .buffered,
+            defer: false
+        )
+        window.isReleasedWhenClosed = false
+        window.identifier = NSUserInterfaceItemIdentifier("cmux.browserBackgroundPreload")
+        window.hasShadow = false
+        window.alphaValue = 0
+        window.ignoresMouseEvents = true
+        window.collectionBehavior = [.transient, .ignoresCycle, .stationary]
+        window.isExcludedFromWindowsMenu = true
+
+        let contentView = NSView(frame: frame)
+        chromiumView.frame = contentView.bounds
+        chromiumView.autoresizingMask = [.width, .height]
+        contentView.addSubview(chromiumView)
+        window.contentView = contentView
+        backgroundPreloadWindow = window
+        window.orderFrontRegardless()
+
+#if DEBUG
+        cmuxDebugLog(
+            "browser.backgroundPreload.host.create panel=\(id.uuidString.prefix(5)) " +
+            "engine=chromium reason=\(reason)"
+        )
+#endif
+    }
+
     private func shouldDeferPromptUntilInteractiveHost(for webView: WKWebView) -> Bool {
         if shouldPreloadInitialNavigationInBackground {
             return true
@@ -4412,6 +4451,14 @@ final class BrowserPanel: Panel, ObservableObject {
         guard attachedWindow !== preloadWindow else { return }
         closeBackgroundPreloadHost(reason: reason)
         drainPendingInteractiveBrowserPromptsIfPossible(reason: reason)
+    }
+
+    func releaseChromiumBackgroundPreloadHostIfAttachedToRealWindow(reason: String) {
+        guard let preloadWindow = backgroundPreloadWindow else { return }
+        guard let chromiumHostView else { return }
+        guard let attachedWindow = chromiumHostView.window else { return }
+        guard attachedWindow !== preloadWindow else { return }
+        closeBackgroundPreloadHost(reason: reason)
     }
 
     private func closeBackgroundPreloadHost(reason: String) {
@@ -5588,12 +5635,17 @@ final class BrowserPanel: Panel, ObservableObject {
             shouldRenderWebView = true
             currentURL = Self.remoteProxyDisplayURL(for: effectiveRequest.url) ?? originalURL
             pageTitle = currentURL?.host ?? currentURL?.absoluteString ?? ""
+            let chromiumView = chromiumContentView()
+            if shouldPreloadInitialNavigationInBackground {
+                shouldPreloadInitialNavigationInBackground = false
+                ensureChromiumBackgroundPreloadHostIfNeeded(chromiumView, reason: "initial-navigation")
+            }
             if recordTypedNavigation {
                 historyStore.recordTypedNavigation(url: originalURL)
             }
             historyStore.recordVisit(url: currentURL, title: pageTitle)
             if let url = effectiveRequest.url {
-                chromiumContentView().load(url)
+                chromiumView.load(url)
             }
             refreshNavigationAvailability()
             return
