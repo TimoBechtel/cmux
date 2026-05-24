@@ -32,16 +32,13 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
-          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
-            XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
-          else
-            XCODE_APP="$(ls -d /Applications/Xcode*.app 2>/dev/null | head -n 1 || true)"
-            if [ -n "$XCODE_APP" ]; then
-              XCODE_DIR="$XCODE_APP/Contents/Developer"
-            else
-              echo "No Xcode.app found under /Applications" >&2
-              exit 1
-            fi
+          # Zig 0.15.2 fails to link the bundled Ghostty CLI helper with the
+          # macOS 26.4 SDK from Xcode 26.4.1. Keep this production-like app
+          # artifact on Xcode 26.2 until the helper build is fixed upstream.
+          XCODE_DIR="/Applications/Xcode_26.2.app/Contents/Developer"
+          if [ ! -d "$XCODE_DIR" ]; then
+            echo "Required Xcode 26.2 not found at $XCODE_DIR" >&2
+            exit 1
           fi
           echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
           export DEVELOPER_DIR="$XCODE_DIR"
