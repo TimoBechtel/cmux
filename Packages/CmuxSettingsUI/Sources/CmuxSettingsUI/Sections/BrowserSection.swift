@@ -21,6 +21,7 @@ public struct BrowserSection: View {
     @State private var customName: DefaultsValueModel<String>
     @State private var customURL: DefaultsValueModel<String>
     @State private var suggestions: DefaultsValueModel<Bool>
+    @State private var browserEngine: DefaultsValueModel<BrowserEngineMode>
     @State private var theme: DefaultsValueModel<BrowserThemeMode>
     @State private var discardEnabled: DefaultsValueModel<Bool>
     @State private var discardDelay: DefaultsValueModel<Double>
@@ -51,6 +52,7 @@ public struct BrowserSection: View {
         _customName = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.browser.customSearchEngineName))
         _customURL = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.browser.customSearchEngineURLTemplate))
         _suggestions = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.browser.showSearchSuggestions))
+        _browserEngine = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.browser.engine))
         _theme = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.browser.theme))
         _discardEnabled = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.browser.discardHiddenWebViews))
         _discardDelay = State(initialValue: DefaultsValueModel(store: defaultsStore, key: catalog.browser.hiddenWebViewDiscardDelaySeconds))
@@ -153,6 +155,25 @@ public struct BrowserSection: View {
                 Toggle("", isOn: Binding(get: { suggestions.current }, set: { suggestions.set($0) }))
                     .labelsHidden()
                     .controlSize(.small)
+            }
+            SettingsCardDivider()
+
+            // Browser Engine
+            SettingsCardRow(
+                configurationReview: .json("browser.engine"),
+                searchAnchorID: "setting:browser:engine",
+                String(localized: "settings.browser.engine", defaultValue: "Browser Engine"),
+                subtitle: browserEngineSubtitle(browserEngine.current),
+                controlWidth: Self.columnWidth
+            ) {
+                Picker("", selection: Binding(get: { browserEngine.current }, set: { browserEngine.set($0) })) {
+                    ForEach(BrowserEngineMode.allCases, id: \.self) { mode in
+                        Text(browserEngineDisplayName(mode)).tag(mode)
+                    }
+                }
+                .labelsHidden()
+                .pickerStyle(.menu)
+                .accessibilityIdentifier("SettingsBrowserEnginePicker")
             }
             SettingsCardDivider()
 
@@ -477,6 +498,24 @@ public struct BrowserSection: View {
         }
         let name = themeDisplayName(mode)
         return String(localized: "settings.browser.theme.subtitleForced", defaultValue: "\(name) forces that color scheme for compatible pages.")
+    }
+
+    private func browserEngineSubtitle(_ mode: BrowserEngineMode) -> String {
+        switch mode {
+        case .webkit:
+            return String(localized: "settings.browser.engine.subtitleWebKit", defaultValue: "New browser panes use the system WebKit engine.")
+        case .chromium:
+            return String(localized: "settings.browser.engine.subtitleChromium", defaultValue: "New browser panes use the bundled Chromium engine.")
+        }
+    }
+
+    private func browserEngineDisplayName(_ mode: BrowserEngineMode) -> String {
+        switch mode {
+        case .webkit:
+            return String(localized: "browser.engine.webkit", defaultValue: "WebKit")
+        case .chromium:
+            return String(localized: "browser.engine.chromium", defaultValue: "Chromium")
+        }
     }
 
     private func themeDisplayName(_ mode: BrowserThemeMode) -> String {
