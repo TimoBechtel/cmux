@@ -6377,7 +6377,7 @@ private extension BrowserPanel {
             isReactGrabActive: isReactGrabActive,
             isVisualAutomationCaptureActive: activeVisualAutomationCaptureCount > 0,
             hasPopups: chromiumHostView?.hasOpenPopups == true,
-            isCapturingMedia: false,
+            isCapturingMedia: chromiumHostView?.isCapturingMedia == true,
             isPlayingMedia: isPlayingMedia
         )
     }
