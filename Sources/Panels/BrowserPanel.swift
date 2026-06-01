@@ -6702,7 +6702,8 @@ private extension BrowserPanel {
             isDeveloperToolsVisible: chromiumDeveloperToolsVisible,
             isElementFullscreenActive: isElementFullscreenActive,
             isReactGrabActive: isReactGrabActive,
-            hasPopups: chromiumHostView?.hasOpenPopups == true
+            hasPopups: chromiumHostView?.hasOpenPopups == true,
+            isCapturingMedia: chromiumHostView?.isCapturingMedia == true
         )
     }
 
