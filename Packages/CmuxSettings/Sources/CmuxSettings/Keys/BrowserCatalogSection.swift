@@ -26,6 +26,12 @@ public struct BrowserCatalogSection: SettingCatalogSection {
         userDefaultsKey: "browserSearchSuggestionsEnabled"
     )
 
+    public let engine = DefaultsKey<BrowserEngineMode>(
+        id: "browser.engine",
+        defaultValue: .chromium,
+        userDefaultsKey: "browserEngine"
+    )
+
     public let theme = DefaultsKey<BrowserThemeMode>(
         id: "browser.theme",
         defaultValue: .system,
