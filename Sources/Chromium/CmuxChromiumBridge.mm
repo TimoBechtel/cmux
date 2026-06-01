@@ -44,6 +44,7 @@ static NSString *const CmuxChromiumFaviconURLsNotification = @"CmuxChromiumFavic
 static NSString *const CmuxChromiumFindResultNotification = @"CmuxChromiumFindResultNotification";
 static NSString *const CmuxChromiumContextMenuActionNotification = @"CmuxChromiumContextMenuActionNotification";
 static NSString *const CmuxChromiumCloseRequestNotification = @"CmuxChromiumCloseRequestNotification";
+static NSString *const CmuxChromiumMediaAccessNotification = @"CmuxChromiumMediaAccessNotification";
 static const int CmuxChromiumMenuOpenLinkInNewTab = MENU_ID_USER_FIRST + 1;
 static const int CmuxChromiumMenuOpenLinkInDefaultBrowser = MENU_ID_USER_FIRST + 2;
 static const int CmuxChromiumMenuDownloadLinkedFile = MENU_ID_USER_FIRST + 3;
@@ -1362,6 +1363,27 @@ static void CEF_CALLBACK OnFullscreenModeChange(
     PostNavigationState(client, browser, @{ @"isFullscreen": @(fullscreen ? YES : NO) });
 }
 
+static void CEF_CALLBACK OnMediaAccessChange(
+    cef_display_handler_t *self,
+    cef_browser_t *browser,
+    int has_video_access,
+    int has_audio_access
+) {
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, display_handler));
+    cmux_chromium_browser_t *browserHandle = client->browser_handle;
+    if (!browserHandle) return;
+    id notificationObject = CmuxChromiumNotificationObject(browserHandle);
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSNotificationCenter.defaultCenter postNotificationName:CmuxChromiumMediaAccessNotification
+                                                          object:notificationObject
+                                                        userInfo:@{
+                                                            @"browserHandle": [NSValue valueWithPointer:browserHandle],
+                                                            @"hasVideoAccess": @(has_video_access ? YES : NO),
+                                                            @"hasAudioAccess": @(has_audio_access ? YES : NO)
+                                                        }];
+    });
+}
+
 static void CEF_CALLBACK OnLoadingStateChange(
     cef_load_handler_t *self,
     cef_browser_t *browser,
@@ -1619,6 +1641,7 @@ static cmux_chromium_client_t *CreateClient(void) {
     client->display_handler.on_title_change = OnTitleChange;
     client->display_handler.on_favicon_urlchange = OnFaviconURLChange;
     client->display_handler.on_fullscreen_mode_change = OnFullscreenModeChange;
+    client->display_handler.on_media_access_change = OnMediaAccessChange;
     client->display_handler.on_console_message = OnConsoleMessage;
     client->load_handler.on_load_start = OnLoadStart;
     client->load_handler.on_loading_state_change = OnLoadingStateChange;

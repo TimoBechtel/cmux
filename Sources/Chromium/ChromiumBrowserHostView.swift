@@ -89,6 +89,7 @@ final class ChromiumBrowserHostView: NSView {
     private var contentFocusEventMonitor: Any?
     private var devToolsDividerTrackingArea: NSTrackingArea?
     private var pendingJavaScript: [String] = []
+    private(set) var isCapturingMedia = false
     private var browserNotificationObject: AnyObject?
     private var devToolsBrowserNotificationObject: AnyObject?
     private let pageContainerView = NSView(frame: .zero)
@@ -114,6 +115,7 @@ final class ChromiumBrowserHostView: NSView {
     private static let findResultNotification = Notification.Name("CmuxChromiumFindResultNotification")
     private static let contextMenuActionNotification = Notification.Name("CmuxChromiumContextMenuActionNotification")
     private static let closeRequestNotification = Notification.Name("CmuxChromiumCloseRequestNotification")
+    private static let mediaAccessNotification = Notification.Name("CmuxChromiumMediaAccessNotification")
     var onReactGrabMessage: (([String: Any]) -> Void)?
     var onNavigationStateChanged: ((ChromiumNavigationState) -> Void)?
     var onPopupRequest: ((URL) -> Void)?
@@ -427,6 +429,7 @@ final class ChromiumBrowserHostView: NSView {
         stopObservingBrowserNotifications(for: browserNotificationObject)
         browserNotificationObject = nil
         self.browserHandle = nil
+        isCapturingMedia = false
         cmux_chromium_dispose_browser(browserHandle)
     }
 
@@ -811,6 +814,7 @@ final class ChromiumBrowserHostView: NSView {
             (Self.findResultNotification, #selector(handleFindResultNotification(_:))),
             (Self.contextMenuActionNotification, #selector(handleContextMenuActionNotification(_:))),
             (Self.closeRequestNotification, #selector(handleCloseRequestNotification(_:))),
+            (Self.mediaAccessNotification, #selector(handleMediaAccessNotification(_:))),
         ]
     }
 
@@ -830,6 +834,7 @@ final class ChromiumBrowserHostView: NSView {
             stopObservingBrowserNotifications(for: browserNotificationObject)
             browserNotificationObject = nil
             browserHandle = nil
+            isCapturingMedia = false
             cmux_chromium_dispose_browser(pointer)
         }
     }
@@ -841,6 +846,17 @@ final class ChromiumBrowserHostView: NSView {
             return
         }
         onCloseRequested?()
+    }
+
+    @objc private func handleMediaAccessNotification(_ notification: Notification) {
+        guard let browserHandle,
+              let notifiedBrowserHandle = notification.userInfo?["browserHandle"] as? NSValue,
+              notifiedBrowserHandle.pointerValue == browserHandle else {
+            return
+        }
+        let hasVideoAccess = notification.userInfo?["hasVideoAccess"] as? Bool ?? false
+        let hasAudioAccess = notification.userInfo?["hasAudioAccess"] as? Bool ?? false
+        isCapturingMedia = hasVideoAccess || hasAudioAccess
     }
 
     @objc private func handlePopupRequestNotification(_ notification: Notification) {
