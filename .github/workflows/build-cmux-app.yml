@@ -22,7 +22,63 @@ env:
   ARTIFACT_NAME: cmux-chromium-macos-arm64.zip
 
 jobs:
+  build-ghostty-cli-helper:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          submodules: recursive
+
+      - name: Determine Ghostty helper cache key
+        id: ghostty-helper-cache-key
+        run: |
+          set -euo pipefail
+          echo "ghostty-sha=$(git -C ghostty rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Cache universal Ghostty CLI helper
+        id: cache-ghostty-cli-helper
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ghostty-cli-helper/ghostty
+          key: ghostty-cli-helper-${{ steps.ghostty-helper-cache-key.outputs.ghostty-sha }}-${{ hashFiles('scripts/build-ghostty-cli-helper.sh', 'scripts/install-zig-ci.sh') }}
+
+      - name: Install zig
+        if: steps.cache-ghostty-cli-helper.outputs.cache-hit != 'true'
+        run: ./scripts/install-zig-ci.sh
+
+      - name: Cache Zig packages
+        if: steps.cache-ghostty-cli-helper.outputs.cache-hit != 'true'
+        uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
+        with:
+          path: ~/.cache/zig
+          key: zig-packages-${{ hashFiles('ghostty/build.zig.zon', 'ghostty/build.zig.zon.json') }}
+          restore-keys: zig-packages-
+
+      - name: Build universal Ghostty CLI helper
+        if: steps.cache-ghostty-cli-helper.outputs.cache-hit != 'true'
+        run: |
+          set -euo pipefail
+          mkdir -p ghostty-cli-helper
+          ./scripts/build-ghostty-cli-helper.sh --universal --output ghostty-cli-helper/ghostty
+          lipo ghostty-cli-helper/ghostty -verify_arch arm64 x86_64
+
+      - name: Verify universal Ghostty CLI helper
+        run: |
+          set -euo pipefail
+          test -x ghostty-cli-helper/ghostty
+          lipo ghostty-cli-helper/ghostty -verify_arch arm64 x86_64
+
+      - name: Upload universal Ghostty CLI helper
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: cmux-ghostty-cli-helper
+          path: ghostty-cli-helper/ghostty
+          if-no-files-found: error
+
   build:
+    needs: build-ghostty-cli-helper
     runs-on: macos-26
     timeout-minutes: 45
     steps:
@@ -34,12 +90,28 @@ jobs:
       - name: Select Xcode
         run: |
           set -euo pipefail
-          # Zig 0.15.2 fails to link the bundled Ghostty CLI helper with the
-          # macOS 26.4 SDK from Xcode 26.4.1. Keep this production-like app
-          # artifact on Xcode 26.2 until the helper build is fixed upstream.
-          XCODE_DIR="/Applications/Xcode_26.2.app/Contents/Developer"
-          if [ ! -d "$XCODE_DIR" ]; then
-            echo "Required Xcode 26.2 not found at $XCODE_DIR" >&2
+          # The app must link against the macOS 26 SDK so it adopts Liquid Glass
+          # on Tahoe. The Ghostty CLI helper is built separately on macOS 15
+          # and injected after this app build.
+          if [ -d "/Applications/Xcode.app/Contents/Developer" ]; then
+            XCODE_DIR="/Applications/Xcode.app/Contents/Developer"
+          else
+            XCODE_APP="$(
+              find /Applications -maxdepth 1 -name 'Xcode*.app' -print 2>/dev/null \
+                | sort \
+                | tail -n 1 \
+                || true
+            )"
+            if [ -n "$XCODE_APP" ]; then
+              XCODE_DIR="$XCODE_APP/Contents/Developer"
+            else
+              echo "No Xcode.app found under /Applications" >&2
+              exit 1
+            fi
+          fi
+          SDK_VERSION="$(DEVELOPER_DIR="$XCODE_DIR" xcrun --sdk macosx --show-sdk-version)"
+          if [ "${SDK_VERSION%%.*}" -lt 26 ]; then
+            echo "No Xcode with the macOS 26+ SDK found; the app would ship without Liquid Glass on Tahoe." >&2
             exit 1
           fi
           echo "DEVELOPER_DIR=$XCODE_DIR" >> "$GITHUB_ENV"
@@ -69,12 +141,6 @@ jobs:
         if: steps.cache-cef.outputs.cache-hit != 'true'
         run: ./scripts/download-cef-runtime.sh
 
-      - name: Install zig
-        uses: mlugg/setup-zig@d1434d08867e3ee9daa34448df10607b98908d29 # v2.2.1
-        with:
-          version: 0.15.2
-          cache-key: cmux-app
-
       - name: Cache Swift packages
         uses: actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae # v5.0.5
         with:
@@ -90,6 +156,8 @@ jobs:
           cache-dependency-path: daemon/remote/go.sum
 
       - name: Build app
+        env:
+          CMUX_SKIP_ZIG_BUILD: "1"
         run: |
           set -euo pipefail
           xcodebuild -project cmux.xcodeproj -scheme cmux -configuration Release \
@@ -101,6 +169,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             PRODUCT_BUNDLE_IDENTIFIER="$APP_BUNDLE_ID" \
             build
+
+      - name: Download universal Ghostty CLI helper
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: cmux-ghostty-cli-helper
+          path: ghostty-cli-helper
+
+      - name: Inject universal Ghostty CLI helper
+        run: |
+          set -euo pipefail
+          ./scripts/install-prebuilt-ghostty-cli-helper.sh \
+            ghostty-cli-helper/ghostty \
+            build-cmux-app/Build/Products/Release/cmux.app
 
       - name: Rename fork app bundle
         run: |
