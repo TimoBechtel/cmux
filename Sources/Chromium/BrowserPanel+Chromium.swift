@@ -1,6 +1,8 @@
 import AppKit
 import WebKit
 
+private let chromiumAudioPlaybackFrameID = "chromium-audio-stream"
+
 @objc(CmuxChromiumNavigationPolicy)
 final class CmuxChromiumNavigationPolicy: NSObject {
     @objc(shouldOpenURLExternally:)
@@ -184,6 +186,9 @@ extension BrowserPanel {
             chromiumHostView.onCloseRequested = { [weak self] in
                 self?.webViewDidRequestClose?()
             }
+            chromiumHostView.onMediaPlaybackChanged = { [weak self] isPlaying in
+                self?.applyMediaPlaybackReport(frameID: chromiumAudioPlaybackFrameID, isPlaying: isPlaying)
+            }
             chromiumHostView.onContextMenuMoveTabToNewWorkspace = { [weak self] in
                 guard let self else { return false }
                 return AppDelegate.shared?.moveSurfaceToNewWorkspace(
@@ -216,6 +221,9 @@ extension BrowserPanel {
         }
         view.onCloseRequested = { [weak self] in
             self?.webViewDidRequestClose?()
+        }
+        view.onMediaPlaybackChanged = { [weak self] isPlaying in
+            self?.applyMediaPlaybackReport(frameID: chromiumAudioPlaybackFrameID, isPlaying: isPlaying)
         }
         view.onContextMenuMoveTabToNewWorkspace = { [weak self] in
             guard let self else { return false }
