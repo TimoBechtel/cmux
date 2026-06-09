@@ -78,14 +78,6 @@
 		BCBC0A0E0000000000000D01 /* BrowserChromeMetricsTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = BCBC0A0E0000000000000D02 /* BrowserChromeMetricsTests.swift */; };
 		E12E88F82733EC42F32C36A3 /* BrowserConfigTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */; };
 		A5008373 /* BrowserFindJavaScript.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008372 /* BrowserFindJavaScript.swift */; };
-		CEF000000000000000000001 /* Chromium/CmuxChromiumBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000002 /* Chromium/CmuxChromiumBridge.mm */; };
-		CEF000000000000000000005 /* Chromium/BrowserEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000008 /* Chromium/BrowserEngine.swift */; };
-		CEF000000000000000000006 /* Chromium/ChromiumBrowserHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000009 /* Chromium/ChromiumBrowserHostView.swift */; };
-		CEF000000000000000000007 /* Chromium/ChromiumViewRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF00000000000000000000A /* Chromium/ChromiumViewRepresentable.swift */; };
-		CEF00000000000000000000B /* Chromium/BrowserPanel+Chromium.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF00000000000000000000C /* Chromium/BrowserPanel+Chromium.swift */; };
-		CEF00000000000000000000D /* Chromium/BrowserEngineAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF00000000000000000000E /* Chromium/BrowserEngineAvailability.swift */; };
-		CEF00000000000000000000F /* Chromium/AppDelegate+ChromiumShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000010 /* Chromium/AppDelegate+ChromiumShortcuts.swift */; };
-		CEF000000000000000000011 /* Chromium/BrowserEngineSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000012 /* Chromium/BrowserEngineSurfaceView.swift */; };
 		A5008381 /* BrowserFindJavaScriptTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5008380 /* BrowserFindJavaScriptTests.swift */; };
 		B42450030000000000000001 /* BrowserHiddenWebViewDiscardManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42450040000000000000001 /* BrowserHiddenWebViewDiscardManager.swift */; };
 		B42450010000000000000001 /* BrowserHiddenWebViewDiscardPolicy.swift in Sources */ = {isa = PBXBuildFile; fileRef = B42450020000000000000001 /* BrowserHiddenWebViewDiscardPolicy.swift */; };
@@ -115,6 +107,14 @@
 		C0DE49870000000000000001 /* BrowserWebContentProcessTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE49870000000000000002 /* BrowserWebContentProcessTests.swift */; };
 		A5001534 /* BrowserWindowPortal.swift in Sources */ = {isa = PBXBuildFile; fileRef = A5001533 /* BrowserWindowPortal.swift */; };
 		C0DE35530000000000000101 /* BundledCLILinkageTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0DE35530000000000000102 /* BundledCLILinkageTests.swift */; };
+		CEF00000000000000000000F /* Chromium/AppDelegate+ChromiumShortcuts.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000010 /* Chromium/AppDelegate+ChromiumShortcuts.swift */; };
+		CEF000000000000000000005 /* Chromium/BrowserEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000008 /* Chromium/BrowserEngine.swift */; };
+		CEF00000000000000000000D /* Chromium/BrowserEngineAvailability.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF00000000000000000000E /* Chromium/BrowserEngineAvailability.swift */; };
+		CEF000000000000000000011 /* Chromium/BrowserEngineSurfaceView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000012 /* Chromium/BrowserEngineSurfaceView.swift */; };
+		CEF00000000000000000000B /* Chromium/BrowserPanel+Chromium.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF00000000000000000000C /* Chromium/BrowserPanel+Chromium.swift */; };
+		CEF000000000000000000006 /* Chromium/ChromiumBrowserHostView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000009 /* Chromium/ChromiumBrowserHostView.swift */; };
+		CEF000000000000000000007 /* Chromium/ChromiumViewRepresentable.swift in Sources */ = {isa = PBXBuildFile; fileRef = CEF00000000000000000000A /* Chromium/ChromiumViewRepresentable.swift */; };
+		CEF000000000000000000001 /* Chromium/CmuxChromiumBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = CEF000000000000000000002 /* Chromium/CmuxChromiumBridge.mm */; };
 		F3000000A1B2C3D4E5F60718 /* CJKIMEInputTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */; };
 		D3571002A1B2C3D4E5F60718 /* CJKIMEMarkedSelectionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = D3571003A1B2C3D4E5F60718 /* CJKIMEMarkedSelectionTests.swift */; };
 		C13519000000000000000007 /* ClaudeConfigDirectoryPathTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C13519000000000000000008 /* ClaudeConfigDirectoryPathTests.swift */; };
@@ -882,16 +882,6 @@
 		BCBC0A0E0000000000000D02 /* BrowserChromeMetricsTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserChromeMetricsTests.swift; sourceTree = "<group>"; };
 		970226F3C99D0D937CD00539 /* BrowserConfigTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserConfigTests.swift; sourceTree = "<group>"; };
 		A5008372 /* BrowserFindJavaScript.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Find/BrowserFindJavaScript.swift; sourceTree = "<group>"; };
-		CEF000000000000000000002 /* Chromium/CmuxChromiumBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Chromium/CmuxChromiumBridge.mm; sourceTree = "<group>"; };
-		CEF000000000000000000003 /* Chromium/CmuxChromiumBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Chromium/CmuxChromiumBridge.h; sourceTree = "<group>"; };
-		CEF000000000000000000004 /* Chromium/CmuxChromiumHelper.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Chromium/CmuxChromiumHelper.mm; sourceTree = "<group>"; };
-		CEF000000000000000000008 /* Chromium/BrowserEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/BrowserEngine.swift; sourceTree = "<group>"; };
-		CEF000000000000000000009 /* Chromium/ChromiumBrowserHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/ChromiumBrowserHostView.swift; sourceTree = "<group>"; };
-		CEF00000000000000000000A /* Chromium/ChromiumViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/ChromiumViewRepresentable.swift; sourceTree = "<group>"; };
-		CEF00000000000000000000C /* Chromium/BrowserPanel+Chromium.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Chromium/BrowserPanel+Chromium.swift"; sourceTree = "<group>"; };
-		CEF00000000000000000000E /* Chromium/BrowserEngineAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/BrowserEngineAvailability.swift; sourceTree = "<group>"; };
-		CEF000000000000000000010 /* Chromium/AppDelegate+ChromiumShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Chromium/AppDelegate+ChromiumShortcuts.swift"; sourceTree = "<group>"; };
-		CEF000000000000000000012 /* Chromium/BrowserEngineSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/BrowserEngineSurfaceView.swift; sourceTree = "<group>"; };
 		A5008380 /* BrowserFindJavaScriptTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserFindJavaScriptTests.swift; sourceTree = "<group>"; };
 		B42450040000000000000001 /* BrowserHiddenWebViewDiscardManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/BrowserHiddenWebViewDiscardManager.swift; sourceTree = "<group>"; };
 		B42450020000000000000001 /* BrowserHiddenWebViewDiscardPolicy.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Panels/BrowserHiddenWebViewDiscardPolicy.swift; sourceTree = "<group>"; };
@@ -921,6 +911,16 @@
 		C0DE49870000000000000002 /* BrowserWebContentProcessTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWebContentProcessTests.swift; sourceTree = "<group>"; };
 		A5001533 /* BrowserWindowPortal.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BrowserWindowPortal.swift; sourceTree = "<group>"; };
 		C0DE35530000000000000102 /* BundledCLILinkageTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BundledCLILinkageTests.swift; sourceTree = "<group>"; };
+		CEF000000000000000000010 /* Chromium/AppDelegate+ChromiumShortcuts.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Chromium/AppDelegate+ChromiumShortcuts.swift"; sourceTree = "<group>"; };
+		CEF000000000000000000008 /* Chromium/BrowserEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/BrowserEngine.swift; sourceTree = "<group>"; };
+		CEF00000000000000000000E /* Chromium/BrowserEngineAvailability.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/BrowserEngineAvailability.swift; sourceTree = "<group>"; };
+		CEF000000000000000000012 /* Chromium/BrowserEngineSurfaceView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/BrowserEngineSurfaceView.swift; sourceTree = "<group>"; };
+		CEF00000000000000000000C /* Chromium/BrowserPanel+Chromium.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "Chromium/BrowserPanel+Chromium.swift"; sourceTree = "<group>"; };
+		CEF000000000000000000009 /* Chromium/ChromiumBrowserHostView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/ChromiumBrowserHostView.swift; sourceTree = "<group>"; };
+		CEF00000000000000000000A /* Chromium/ChromiumViewRepresentable.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Chromium/ChromiumViewRepresentable.swift; sourceTree = "<group>"; };
+		CEF000000000000000000003 /* Chromium/CmuxChromiumBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = Chromium/CmuxChromiumBridge.h; sourceTree = "<group>"; };
+		CEF000000000000000000002 /* Chromium/CmuxChromiumBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Chromium/CmuxChromiumBridge.mm; sourceTree = "<group>"; };
+		CEF000000000000000000004 /* Chromium/CmuxChromiumHelper.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = Chromium/CmuxChromiumHelper.mm; sourceTree = "<group>"; };
 		F3000001A1B2C3D4E5F60718 /* CJKIMEInputTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CJKIMEInputTests.swift; sourceTree = "<group>"; };
 		D3571003A1B2C3D4E5F60718 /* CJKIMEMarkedSelectionTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CJKIMEMarkedSelectionTests.swift; sourceTree = "<group>"; };
 		C13519000000000000000008 /* ClaudeConfigDirectoryPathTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClaudeConfigDirectoryPathTests.swift; sourceTree = "<group>"; };
@@ -2798,14 +2798,6 @@
 				B3770BA00000000000000001 /* BrowserAutomation.swift in Sources */,
 				BCBC0A0E0000000000000C01 /* BrowserChromeMetrics.swift in Sources */,
 				A5008373 /* BrowserFindJavaScript.swift in Sources */,
-				CEF000000000000000000001 /* Chromium/CmuxChromiumBridge.mm in Sources */,
-				CEF000000000000000000005 /* Chromium/BrowserEngine.swift in Sources */,
-				CEF000000000000000000006 /* Chromium/ChromiumBrowserHostView.swift in Sources */,
-				CEF000000000000000000007 /* Chromium/ChromiumViewRepresentable.swift in Sources */,
-				CEF00000000000000000000B /* Chromium/BrowserPanel+Chromium.swift in Sources */,
-				CEF00000000000000000000D /* Chromium/BrowserEngineAvailability.swift in Sources */,
-				CEF00000000000000000000F /* Chromium/AppDelegate+ChromiumShortcuts.swift in Sources */,
-				CEF000000000000000000011 /* Chromium/BrowserEngineSurfaceView.swift in Sources */,
 				B42450030000000000000001 /* BrowserHiddenWebViewDiscardManager.swift in Sources */,
 				B42450010000000000000001 /* BrowserHiddenWebViewDiscardPolicy.swift in Sources */,
 				A500MH01 /* BrowserMediaPlaybackMessageHandler.swift in Sources */,
@@ -2824,6 +2816,14 @@
 				A5008371 /* BrowserSearchOverlay.swift in Sources */,
 				A5007422 /* BrowserWebAuthnSupport.swift in Sources */,
 				A5001534 /* BrowserWindowPortal.swift in Sources */,
+				CEF00000000000000000000F /* Chromium/AppDelegate+ChromiumShortcuts.swift in Sources */,
+				CEF000000000000000000005 /* Chromium/BrowserEngine.swift in Sources */,
+				CEF00000000000000000000D /* Chromium/BrowserEngineAvailability.swift in Sources */,
+				CEF000000000000000000011 /* Chromium/BrowserEngineSurfaceView.swift in Sources */,
+				CEF00000000000000000000B /* Chromium/BrowserPanel+Chromium.swift in Sources */,
+				CEF000000000000000000006 /* Chromium/ChromiumBrowserHostView.swift in Sources */,
+				CEF000000000000000000007 /* Chromium/ChromiumViewRepresentable.swift in Sources */,
+				CEF000000000000000000001 /* Chromium/CmuxChromiumBridge.mm in Sources */,
 				A9F200000000000000000015 /* ClaudeStreamJSONAccumulator.swift in Sources */,
 				C46790000000000000000003 /* CLIForwardingLaunchRouter.swift in Sources */,
 				C10D51700000000000000002 /* ClosedItemHistory.swift in Sources */,

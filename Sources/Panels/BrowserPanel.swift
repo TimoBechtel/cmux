@@ -6677,14 +6677,17 @@ private extension BrowserPanel {
             hasCurrentURL: (currentURL ?? restoredHistoryCurrentURL) != nil,
             isLoading: isLoading,
             webViewIsLoading: false,
+            hasActiveMainFrameProvisionalNavigation: false,
             isDownloading: isDownloading,
             activeDownloadCount: activeDownloadCount,
             preferredDeveloperToolsVisible: preferredDeveloperToolsVisible,
             isDeveloperToolsVisible: chromiumDeveloperToolsVisible,
             isElementFullscreenActive: isElementFullscreenActive,
             isReactGrabActive: isReactGrabActive,
+            isVisualAutomationCaptureActive: activeVisualAutomationCaptureCount > 0,
             hasPopups: chromiumHostView?.hasOpenPopups == true,
-            isCapturingMedia: chromiumHostView?.isCapturingMedia == true
+            isCapturingMedia: chromiumHostView?.isCapturingMedia == true,
+            isPlayingMedia: false
         )
     }
 
