@@ -17,6 +17,7 @@
 #include <vector>
 
 #include "include/capi/cef_app_capi.h"
+#include "include/capi/cef_audio_handler_capi.h"
 #include "include/capi/cef_browser_capi.h"
 #include "include/capi/cef_browser_process_handler_capi.h"
 #include "include/capi/cef_context_menu_handler_capi.h"
@@ -45,6 +46,7 @@ static NSString *const CmuxChromiumFindResultNotification = @"CmuxChromiumFindRe
 static NSString *const CmuxChromiumContextMenuActionNotification = @"CmuxChromiumContextMenuActionNotification";
 static NSString *const CmuxChromiumCloseRequestNotification = @"CmuxChromiumCloseRequestNotification";
 static NSString *const CmuxChromiumMediaAccessNotification = @"CmuxChromiumMediaAccessNotification";
+static NSString *const CmuxChromiumMediaPlaybackNotification = @"CmuxChromiumMediaPlaybackNotification";
 static const int CmuxChromiumMenuOpenLinkInNewTab = MENU_ID_USER_FIRST + 1;
 static const int CmuxChromiumMenuOpenLinkInDefaultBrowser = MENU_ID_USER_FIRST + 2;
 static const int CmuxChromiumMenuDownloadLinkedFile = MENU_ID_USER_FIRST + 3;
@@ -155,6 +157,7 @@ static void CmuxInstallChromiumEventBridge(void) {
 
 typedef struct cmux_chromium_client_t {
     cef_client_t client;
+    cef_audio_handler_t audio_handler;
     cef_life_span_handler_t life_span_handler;
     cef_context_menu_handler_t context_menu_handler;
     cef_display_handler_t display_handler;
@@ -548,6 +551,11 @@ static cef_app_t *CmuxChromiumApp(void) {
     return &app.app;
 }
 
+static cef_audio_handler_t *CEF_CALLBACK GetAudioHandler(cef_client_t *self) {
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)self;
+    return &client->audio_handler;
+}
+
 static cef_life_span_handler_t *CEF_CALLBACK GetLifeSpanHandler(cef_client_t *self) {
     cmux_chromium_client_t *client = (cmux_chromium_client_t *)self;
     return &client->life_span_handler;
@@ -662,6 +670,21 @@ static void CmuxChromiumPostCloseRequest(cmux_chromium_client_t *client) {
         [NSNotificationCenter.defaultCenter postNotificationName:CmuxChromiumCloseRequestNotification
                                                           object:notificationObject
                                                         userInfo:@{ @"browserHandle": browserHandle }];
+    });
+}
+
+static void CmuxChromiumPostAudioPlaybackState(cmux_chromium_client_t *client, BOOL isPlaying) {
+    cmux_chromium_browser_t *browserHandle = client ? client->browser_handle : nullptr;
+    if (!browserHandle) return;
+    id notificationObject = CmuxChromiumNotificationObject(browserHandle);
+    NSValue *browserHandleValue = [NSValue valueWithPointer:browserHandle];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSNotificationCenter.defaultCenter postNotificationName:CmuxChromiumMediaPlaybackNotification
+                                                          object:notificationObject
+                                                        userInfo:@{
+                                                            @"browserHandle": browserHandleValue,
+                                                            @"isPlaying": @(isPlaying)
+                                                        }];
     });
 }
 
@@ -1195,13 +1218,46 @@ static int CEF_CALLBACK OnConsoleMessage(
     return 1;
 }
 
+static void PostNavigationState(cmux_chromium_client_t *client, cef_browser_t *browser, NSDictionary *changes);
+
 static void CEF_CALLBACK OnLoadStart(
     cef_load_handler_t *self,
     cef_browser_t *browser,
     cef_frame_t *frame,
     cef_transition_type_t transition_type
 ) {
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, load_handler));
     CmuxChromiumInstallWindowCloseBridge(frame);
+    if (frame && frame->is_main(frame)) {
+        PostNavigationState(client, browser, @{
+            @"hasActiveMainFrameProvisionalNavigation": @NO,
+            @"didCommitMainFrameNavigation": @YES
+        });
+    }
+}
+
+static void CEF_CALLBACK OnLoadEnd(
+    cef_load_handler_t *self,
+    cef_browser_t *browser,
+    cef_frame_t *frame,
+    int http_status_code
+) {
+    if (!frame || !frame->is_main(frame)) return;
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, load_handler));
+    PostNavigationState(client, browser, @{ @"hasActiveMainFrameProvisionalNavigation": @NO });
+}
+
+static void CEF_CALLBACK OnLoadError(
+    cef_load_handler_t *self,
+    cef_browser_t *browser,
+    cef_frame_t *frame,
+    cef_errorcode_t error_code,
+    const cef_string_t *error_text,
+    const cef_string_t *failed_url
+) {
+    if (!frame || !frame->is_main(frame)) return;
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, load_handler));
+    PostNavigationState(client, browser, @{ @"hasActiveMainFrameProvisionalNavigation": @NO });
 }
 
 static void PostNavigationState(cmux_chromium_client_t *client, cef_browser_t *browser, NSDictionary *changes) {
@@ -1394,9 +1450,54 @@ static void CEF_CALLBACK OnLoadingStateChange(
     cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, load_handler));
     PostNavigationState(client, browser, @{
         @"isLoading": @(is_loading ? YES : NO),
+        @"hasActiveMainFrameProvisionalNavigation": @(is_loading ? YES : NO),
         @"canGoBack": @(can_go_back ? YES : NO),
         @"canGoForward": @(can_go_forward ? YES : NO)
     });
+}
+
+static int CEF_CALLBACK GetAudioParameters(
+    cef_audio_handler_t *self,
+    cef_browser_t *browser,
+    cef_audio_parameters_t *params
+) {
+    return 1;
+}
+
+static void CEF_CALLBACK OnAudioStreamStarted(
+    cef_audio_handler_t *self,
+    cef_browser_t *browser,
+    const cef_audio_parameters_t *params,
+    int channels
+) {
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, audio_handler));
+    CmuxChromiumPostAudioPlaybackState(client, YES);
+}
+
+static void CEF_CALLBACK OnAudioStreamPacket(
+    cef_audio_handler_t *self,
+    cef_browser_t *browser,
+    const float **data,
+    int frames,
+    int64_t pts
+) {
+}
+
+static void CEF_CALLBACK OnAudioStreamStopped(
+    cef_audio_handler_t *self,
+    cef_browser_t *browser
+) {
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, audio_handler));
+    CmuxChromiumPostAudioPlaybackState(client, NO);
+}
+
+static void CEF_CALLBACK OnAudioStreamError(
+    cef_audio_handler_t *self,
+    cef_browser_t *browser,
+    const cef_string_t *message
+) {
+    cmux_chromium_client_t *client = (cmux_chromium_client_t *)((char *)self - offsetof(cmux_chromium_client_t, audio_handler));
+    CmuxChromiumPostAudioPlaybackState(client, NO);
 }
 
 static int CEF_CALLBACK CanDownload(
@@ -1614,6 +1715,7 @@ static int CEF_CALLBACK DoClose(cef_life_span_handler_t *self, cef_browser_t *br
 static cmux_chromium_client_t *CreateClient(void) {
     cmux_chromium_client_t *client = (cmux_chromium_client_t *)calloc(1, sizeof(cmux_chromium_client_t));
     InitBase(&client->client.base, sizeof(cef_client_t));
+    InitBase(&client->audio_handler.base, sizeof(cef_audio_handler_t));
     InitBase(&client->life_span_handler.base, sizeof(cef_life_span_handler_t));
     InitBase(&client->context_menu_handler.base, sizeof(cef_context_menu_handler_t));
     InitBase(&client->display_handler.base, sizeof(cef_display_handler_t));
@@ -1622,6 +1724,7 @@ static cmux_chromium_client_t *CreateClient(void) {
     InitBase(&client->download_handler.base, sizeof(cef_download_handler_t));
     InitBase(&client->permission_handler.base, sizeof(cef_permission_handler_t));
     InitBase(&client->find_handler.base, sizeof(cef_find_handler_t));
+    client->client.get_audio_handler = GetAudioHandler;
     client->client.get_life_span_handler = GetLifeSpanHandler;
     client->client.get_context_menu_handler = GetContextMenuHandler;
     client->client.get_display_handler = GetDisplayHandler;
@@ -1630,6 +1733,11 @@ static cmux_chromium_client_t *CreateClient(void) {
     client->client.get_download_handler = GetDownloadHandler;
     client->client.get_permission_handler = GetPermissionHandler;
     client->client.get_find_handler = GetFindHandler;
+    client->audio_handler.get_audio_parameters = GetAudioParameters;
+    client->audio_handler.on_audio_stream_started = OnAudioStreamStarted;
+    client->audio_handler.on_audio_stream_packet = OnAudioStreamPacket;
+    client->audio_handler.on_audio_stream_stopped = OnAudioStreamStopped;
+    client->audio_handler.on_audio_stream_error = OnAudioStreamError;
     client->life_span_handler.on_after_created = OnAfterCreated;
     client->life_span_handler.do_close = DoClose;
     client->life_span_handler.on_before_popup = OnBeforePopup;
@@ -1644,6 +1752,8 @@ static cmux_chromium_client_t *CreateClient(void) {
     client->display_handler.on_media_access_change = OnMediaAccessChange;
     client->display_handler.on_console_message = OnConsoleMessage;
     client->load_handler.on_load_start = OnLoadStart;
+    client->load_handler.on_load_end = OnLoadEnd;
+    client->load_handler.on_load_error = OnLoadError;
     client->load_handler.on_loading_state_change = OnLoadingStateChange;
     client->request_handler.on_open_urlfrom_tab = OnOpenURLFromTab;
     client->download_handler.can_download = CanDownload;
