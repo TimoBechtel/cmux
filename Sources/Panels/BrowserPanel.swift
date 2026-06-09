@@ -6677,7 +6677,7 @@ private extension BrowserPanel {
             hasCurrentURL: (currentURL ?? restoredHistoryCurrentURL) != nil,
             isLoading: isLoading,
             webViewIsLoading: false,
-            hasActiveMainFrameProvisionalNavigation: false,
+            hasActiveMainFrameProvisionalNavigation: isMainFrameProvisionalNavigationActive,
             isDownloading: isDownloading,
             activeDownloadCount: activeDownloadCount,
             preferredDeveloperToolsVisible: preferredDeveloperToolsVisible,
@@ -6687,7 +6687,7 @@ private extension BrowserPanel {
             isVisualAutomationCaptureActive: activeVisualAutomationCaptureCount > 0,
             hasPopups: chromiumHostView?.hasOpenPopups == true,
             isCapturingMedia: chromiumHostView?.isCapturingMedia == true,
-            isPlayingMedia: false
+            isPlayingMedia: isPlayingMedia
         )
     }
 
@@ -8702,6 +8702,12 @@ extension BrowserPanel {
             } else {
                 shouldCaptureBrowserPanel = true
             }
+        }
+        if let hasActiveMainFrameProvisionalNavigation = state.hasActiveMainFrameProvisionalNavigation {
+            isMainFrameProvisionalNavigationActive = hasActiveMainFrameProvisionalNavigation
+        }
+        if state.didCommitMainFrameNavigation == true {
+            resetMediaPlaybackTracking()
         }
         if let isFullscreen = state.isFullscreen {
             isElementFullscreenActive = isFullscreen
