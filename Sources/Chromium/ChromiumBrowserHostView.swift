@@ -6,6 +6,8 @@ struct ChromiumNavigationState {
     let url: URL?
     let title: String?
     let isLoading: Bool?
+    let hasActiveMainFrameProvisionalNavigation: Bool?
+    let didCommitMainFrameNavigation: Bool?
     let isFullscreen: Bool?
     let canGoBack: Bool?
     let canGoForward: Bool?
@@ -90,6 +92,7 @@ final class ChromiumBrowserHostView: NSView {
     private var devToolsDividerTrackingArea: NSTrackingArea?
     private var pendingJavaScript: [String] = []
     private(set) var isCapturingMedia = false
+    private(set) var isPlayingMedia = false
     private var browserNotificationObject: AnyObject?
     private var devToolsBrowserNotificationObject: AnyObject?
     private let pageContainerView = NSView(frame: .zero)
@@ -116,6 +119,7 @@ final class ChromiumBrowserHostView: NSView {
     private static let contextMenuActionNotification = Notification.Name("CmuxChromiumContextMenuActionNotification")
     private static let closeRequestNotification = Notification.Name("CmuxChromiumCloseRequestNotification")
     private static let mediaAccessNotification = Notification.Name("CmuxChromiumMediaAccessNotification")
+    private static let mediaPlaybackNotification = Notification.Name("CmuxChromiumMediaPlaybackNotification")
     var onReactGrabMessage: (([String: Any]) -> Void)?
     var onNavigationStateChanged: ((ChromiumNavigationState) -> Void)?
     var onPopupRequest: ((URL) -> Void)?
@@ -124,6 +128,7 @@ final class ChromiumBrowserHostView: NSView {
     var onFindResult: ((Int, Int) -> Void)?
     var onContextMenuMoveTabToNewWorkspace: (() -> Bool)?
     var onCloseRequested: (() -> Void)?
+    var onMediaPlaybackChanged: ((Bool) -> Void)?
     var acceptsContentFocusEvents = true
 
     init(initialURL: URL?) {
@@ -430,6 +435,7 @@ final class ChromiumBrowserHostView: NSView {
         browserNotificationObject = nil
         self.browserHandle = nil
         isCapturingMedia = false
+        isPlayingMedia = false
         cmux_chromium_dispose_browser(browserHandle)
     }
 
@@ -815,6 +821,7 @@ final class ChromiumBrowserHostView: NSView {
             (Self.contextMenuActionNotification, #selector(handleContextMenuActionNotification(_:))),
             (Self.closeRequestNotification, #selector(handleCloseRequestNotification(_:))),
             (Self.mediaAccessNotification, #selector(handleMediaAccessNotification(_:))),
+            (Self.mediaPlaybackNotification, #selector(handleMediaPlaybackNotification(_:))),
         ]
     }
 
@@ -835,6 +842,7 @@ final class ChromiumBrowserHostView: NSView {
             browserNotificationObject = nil
             browserHandle = nil
             isCapturingMedia = false
+            isPlayingMedia = false
             cmux_chromium_dispose_browser(pointer)
         }
     }
@@ -857,6 +865,20 @@ final class ChromiumBrowserHostView: NSView {
         let hasVideoAccess = notification.userInfo?["hasVideoAccess"] as? Bool ?? false
         let hasAudioAccess = notification.userInfo?["hasAudioAccess"] as? Bool ?? false
         isCapturingMedia = hasVideoAccess || hasAudioAccess
+    }
+
+    @objc private func handleMediaPlaybackNotification(_ notification: Notification) {
+        guard let browserHandle,
+              let notifiedBrowserHandle = notification.userInfo?["browserHandle"] as? NSValue,
+              notifiedBrowserHandle.pointerValue == browserHandle,
+              let isPlaying = notification.userInfo?["isPlaying"] as? Bool else {
+            return
+        }
+        isPlayingMedia = isPlaying
+#if DEBUG
+        cmuxDebugLog("browser.chromium.audio playing=\(isPlaying ? 1 : 0)")
+#endif
+        onMediaPlaybackChanged?(isPlaying)
     }
 
     @objc private func handlePopupRequestNotification(_ notification: Notification) {
@@ -971,6 +993,12 @@ final class ChromiumBrowserHostView: NSView {
         }
         let title = notification.userInfo?["title"] as? String
         let isLoading = notification.userInfo?["isLoading"] as? Bool
+        let hasActiveMainFrameProvisionalNavigation =
+            notification.userInfo?["hasActiveMainFrameProvisionalNavigation"] as? Bool
+        let didCommitMainFrameNavigation = notification.userInfo?["didCommitMainFrameNavigation"] as? Bool
+        if didCommitMainFrameNavigation == true {
+            isPlayingMedia = false
+        }
         let isFullscreen = notification.userInfo?["isFullscreen"] as? Bool
         let canGoBack = notification.userInfo?["canGoBack"] as? Bool
         let canGoForward = notification.userInfo?["canGoForward"] as? Bool
@@ -981,6 +1009,8 @@ final class ChromiumBrowserHostView: NSView {
                 url: url,
                 title: title,
                 isLoading: isLoading,
+                hasActiveMainFrameProvisionalNavigation: hasActiveMainFrameProvisionalNavigation,
+                didCommitMainFrameNavigation: didCommitMainFrameNavigation,
                 isFullscreen: isFullscreen,
                 canGoBack: canGoBack,
                 canGoForward: canGoForward,
