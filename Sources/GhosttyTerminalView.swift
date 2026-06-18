@@ -4686,13 +4686,11 @@ class GhosttyApp {
                 .flatMap { String(cString: $0) } ?? ""
             if let tabId = surfaceView.tabId,
                let surfaceId = surfaceView.terminalSurface?.id {
-                DispatchQueue.main.async {
-                    TerminalTitleNotificationCoalescer.shared.enqueue(
-                        tabId: tabId,
-                        surfaceId: surfaceId,
-                        title: title
-                    )
-                }
+                TerminalTitleNotificationCoalescer.shared.enqueue(
+                    tabId: tabId,
+                    surfaceId: surfaceId,
+                    title: title
+                )
             }
             return true
         case GHOSTTY_ACTION_PWD:
@@ -5294,7 +5292,6 @@ private final class TerminalSharedBackdropCutoutFilter: CIFilter {
     }
 }
 
-@MainActor
 final class TerminalTitleNotificationCoalescer {
     static let shared = TerminalTitleNotificationCoalescer()
 
@@ -5304,57 +5301,77 @@ final class TerminalTitleNotificationCoalescer {
     }
 
     private let interval: CFTimeInterval = 0.25
+    private let lock = NSLock()
     private var lastTitles: [Key: String] = [:]
     private var lastTimes: [Key: CFTimeInterval] = [:]
     private var pending: [Key: String] = [:]
-    private var flushes: [Key: DispatchWorkItem] = [:]
+    private var scheduledFlushes: Set<Key> = []
 
     func enqueue(tabId: UUID, surfaceId: UUID, title: String) {
         let key = Key(tabId: tabId, surfaceId: surfaceId)
-        guard lastTitles[key] != title else { return }
-
         let now = CACurrentMediaTime()
+
+        lock.lock()
+        guard lastTitles[key] != title else {
+            lock.unlock()
+            return
+        }
+
         let elapsed = now - (lastTimes[key] ?? 0)
         guard elapsed < interval else {
-            flushes[key]?.cancel()
-            flushes[key] = nil
             pending.removeValue(forKey: key)
-            post(key: key, title: title, now: now)
+            scheduledFlushes.remove(key)
+            lastTitles[key] = title
+            lastTimes[key] = now
+            lock.unlock()
+            post(key: key, title: title)
             return
         }
 
         pending[key] = title
-        guard flushes[key] == nil else { return }
-
-        let flush = DispatchWorkItem { [weak self] in self?.flush(key) }
-        flushes[key] = flush
-        let delay = interval - elapsed
-        DispatchQueue.main.asyncAfter(deadline: .now() + delay, execute: flush)
-    }
-
-    private func flush(_ key: Key) {
-        flushes[key] = nil
-        guard let title = pending.removeValue(forKey: key),
-              lastTitles[key] != title else {
+        guard scheduledFlushes.insert(key).inserted else {
+            lock.unlock()
             return
         }
 
-        post(key: key, title: title, now: CACurrentMediaTime())
+        let delay = interval - elapsed
+        lock.unlock()
+
+        DispatchQueue.main.asyncAfter(deadline: .now() + delay) { [weak self] in
+            self?.flush(key)
+        }
     }
 
-    private func post(key: Key, title: String, now: CFTimeInterval) {
-        guard lastTitles[key] != title else { return }
+    private func flush(_ key: Key) {
+        let title: String
+
+        lock.lock()
+        scheduledFlushes.remove(key)
+        guard let pendingTitle = pending.removeValue(forKey: key),
+              lastTitles[key] != pendingTitle else {
+            lock.unlock()
+            return
+        }
+        title = pendingTitle
         lastTitles[key] = title
-        lastTimes[key] = now
-        NotificationCenter.default.post(
-            name: .ghosttyDidSetTitle,
-            object: nil,
-            userInfo: [
-                GhosttyNotificationKey.tabId: key.tabId,
-                GhosttyNotificationKey.surfaceId: key.surfaceId,
-                GhosttyNotificationKey.title: title,
-            ]
-        )
+        lastTimes[key] = CACurrentMediaTime()
+        lock.unlock()
+
+        post(key: key, title: title)
+    }
+
+    private func post(key: Key, title: String) {
+        DispatchQueue.main.async {
+            NotificationCenter.default.post(
+                name: .ghosttyDidSetTitle,
+                object: nil,
+                userInfo: [
+                    GhosttyNotificationKey.tabId: key.tabId,
+                    GhosttyNotificationKey.surfaceId: key.surfaceId,
+                    GhosttyNotificationKey.title: title,
+                ]
+            )
+        }
     }
 }
 
