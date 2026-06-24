@@ -187,7 +187,7 @@ extension BrowserPanel {
                 self?.webViewDidRequestClose?()
             }
             chromiumHostView.onMediaPlaybackChanged = { [weak self] isPlaying in
-                self?.applyMediaPlaybackReport(frameID: chromiumAudioPlaybackFrameID, isPlaying: isPlaying)
+                self?.applyMediaPlaybackReport(frameID: chromiumAudioPlaybackFrameID, isPlaying: isPlaying, isAudible: isPlaying)
             }
             chromiumHostView.onContextMenuMoveTabToNewWorkspace = { [weak self] in
                 guard let self else { return false }
@@ -223,7 +223,7 @@ extension BrowserPanel {
             self?.webViewDidRequestClose?()
         }
         view.onMediaPlaybackChanged = { [weak self] isPlaying in
-            self?.applyMediaPlaybackReport(frameID: chromiumAudioPlaybackFrameID, isPlaying: isPlaying)
+            self?.applyMediaPlaybackReport(frameID: chromiumAudioPlaybackFrameID, isPlaying: isPlaying, isAudible: isPlaying)
         }
         view.onContextMenuMoveTabToNewWorkspace = { [weak self] in
             guard let self else { return false }
