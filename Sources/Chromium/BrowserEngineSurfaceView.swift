@@ -10,6 +10,7 @@ struct BrowserEngineSurfaceView: View {
     let isPanelFocused: Bool
     let portalZPriority: Int
     let paneDropZone: DropZone?
+    let paneOwnershipOverride: Bool?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
     let omnibarSuggestions: BrowserPortalOmnibarSuggestionsConfiguration?
     let paneTopChromeHeight: CGFloat
@@ -33,6 +34,7 @@ struct BrowserEngineSurfaceView: View {
                 isPanelFocused: isPanelFocused,
                 portalZPriority: portalZPriority,
                 paneDropZone: paneDropZone,
+                paneOwnershipOverride: paneOwnershipOverride,
                 searchOverlay: searchOverlay,
                 omnibarSuggestions: omnibarSuggestions,
                 paneTopChromeHeight: paneTopChromeHeight
