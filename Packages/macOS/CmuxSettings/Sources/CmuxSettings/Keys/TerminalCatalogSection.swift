@@ -96,7 +96,7 @@ public struct TerminalCatalogSection: SettingCatalogSection {
     /// performance tradeoff.
     public let titleUpdateCoalescingEnabled = DefaultsKey<Bool>(
         id: "terminal.titleUpdates.coalescing.enabled",
-        defaultValue: false,
+        defaultValue: true,
         userDefaultsKey: "terminal.titleUpdates.coalescing.enabled"
     )
 

@@ -34,7 +34,7 @@ struct UserDefaultsSettingsClientTests {
         #expect(client.value(for: catalog.workspaceColors.indicatorStyle) == .leftRail)
         #expect(client.value(for: catalog.workspaceGroups.anchorCloseSuppressed) == false)
         #expect(client.value(for: catalog.workspaceGroups.newWorkspacePlacement) == .afterCurrent)
-        #expect(client.value(for: catalog.terminal.titleUpdateCoalescingEnabled) == false)
+        #expect(client.value(for: catalog.terminal.titleUpdateCoalescingEnabled) == true)
         #expect(client.value(for: catalog.terminal.titleUpdateCoalescingMilliseconds) == 500)
         #expect(client.value(for: catalog.terminal.titleUpdateDiagnostics) == false)
     }
