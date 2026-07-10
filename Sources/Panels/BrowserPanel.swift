@@ -3369,29 +3369,6 @@ final class BrowserPanel: Panel, ObservableObject {
 
     var hasPendingRemoteNavigation: Bool { pendingRemoteNavigation != nil }
 
-    @discardableResult
-    func restoreDiscardedWebViewIfNeeded(
-        reason: String,
-        cachePolicy: URLRequest.CachePolicy = .useProtocolCachePolicy
-    ) -> Bool {
-        if usesChromiumEngine {
-            return restoreDiscardedChromiumWebViewIfNeeded(reason: reason)
-        }
-        return hiddenWebViewDiscardManager.restoreIfNeeded(reason: reason) {
-            shouldRenderWebView = true
-            guard let restoreURL = restoredHistoryCurrentURL ?? currentURL else {
-                refreshNavigationAvailability()
-                return
-            }
-            navigateWithoutInsecureHTTPPrompt(
-                to: restoreURL,
-                recordTypedNavigation: false,
-                preserveRestoredSessionHistory: true,
-                cachePolicy: cachePolicy
-            )
-        }
-    }
-
     private func clearWebViewDiscardState(reason: String) {
         guard hiddenWebViewDiscardManager.clearDiscardState(reason: reason) else { return }
         refreshWebViewLifecycleState()
@@ -5884,6 +5861,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 historyStore.recordTypedNavigation(url: originalURL)
             }
             historyStore.recordVisit(url: currentURL, title: pageTitle)
+            noteDiscardedWebViewRestoreNavigationStarted()
             if let url = effectiveRequest.url {
                 chromiumView.load(url)
             }
@@ -6352,7 +6330,7 @@ private func browserDottedHostWithPortCandidate(_ input: String, schemeCandidate
     return rest.isEmpty || rest.first == "/" || rest.first == "?" || rest.first == "#"
 }
 
-private extension BrowserPanel {
+extension BrowserPanel {
     func hiddenChromiumWebViewDiscardBlockers() -> [String] {
         var blockers = hiddenWebViewDiscardManager.blockers(for: chromiumHiddenWebViewDiscardSnapshot)
         if chromiumHostView?.hasLiveBrowser != true { blockers.append("no_live_browser") }
@@ -6426,8 +6404,14 @@ private extension BrowserPanel {
         return true
     }
 
-    func restoreDiscardedChromiumWebViewIfNeeded(reason: String) -> Bool {
-        return hiddenWebViewDiscardManager.restoreIfNeeded(reason: reason) {
+    func restoreDiscardedChromiumWebViewIfNeeded(
+        reason: String,
+        forceRestartPendingRestore: Bool = false
+    ) -> Bool {
+        return hiddenWebViewDiscardManager.restoreIfNeeded(
+            reason: reason,
+            force: forceRestartPendingRestore
+        ) {
             shouldRenderWebView = true
             guard let restoreURL = restoredHistoryCurrentURL ?? currentURL else {
                 refreshNavigationAvailability()
@@ -6672,6 +6656,13 @@ extension BrowserPanel {
 
     /// Reload the current page, bypassing WebKit's cache.
     func hardReload() {
+        if usesChromiumEngine {
+            if restoreDiscardedWebViewIfNeeded(reason: "hardReload", cachePolicy: BrowserPanelReloadMode.hard.recoveryCachePolicy, forceRestartPendingRestore: true) {
+                return
+            }
+            _ = chromiumHardReloadIfNeeded()
+            return
+        }
         if prepareForReload(reason: "hardReload", mode: .hard) {
             return
         }
@@ -8156,6 +8147,9 @@ extension BrowserPanel {
         }
         if state.didCommitMainFrameNavigation == true {
             resetMediaPlaybackTracking()
+            if let url = state.url, !Self.isAboutBlankURL(url) {
+                noteDiscardedWebViewRestoreNavigationCommitted()
+            }
         }
         if let isFullscreen = state.isFullscreen {
             isElementFullscreenActive = isFullscreen

@@ -339,6 +339,11 @@ final class ChromiumBrowserHostView: NSView {
         cmux_chromium_reload(browserHandle)
     }
 
+    func reloadIgnoringCache() {
+        guard let browserHandle else { return }
+        cmux_chromium_reload_ignore_cache(browserHandle)
+    }
+
     func stopLoading() {
         guard let browserHandle else { return }
         cmux_chromium_stop_loading(browserHandle)

@@ -1230,6 +1230,7 @@ static void CEF_CALLBACK OnLoadStart(
     CmuxChromiumInstallWindowCloseBridge(frame);
     if (frame && frame->is_main(frame)) {
         PostNavigationState(client, browser, @{
+            @"url": CmuxChromiumBrowserURL(browser),
             @"hasActiveMainFrameProvisionalNavigation": @NO,
             @"didCommitMainFrameNavigation": @YES
         });
@@ -2007,6 +2008,10 @@ void cmux_chromium_refresh_navigation_entries(void *browserHandle) {
 
 void cmux_chromium_reload(void *browserHandle) {
     WithBrowser(browserHandle, ^(cef_browser_t *browser) { browser->reload(browser); });
+}
+
+void cmux_chromium_reload_ignore_cache(void *browserHandle) {
+    WithBrowser(browserHandle, ^(cef_browser_t *browser) { browser->reload_ignore_cache(browser); });
 }
 
 void cmux_chromium_stop_loading(void *browserHandle) {
