@@ -57,6 +57,13 @@ extension BrowserPanel {
         allowBlankShellHeal: Bool = true,
         forceRestartPendingRestore: Bool = false
     ) -> Bool {
+        if usesChromiumEngine {
+            return restoreDiscardedChromiumWebViewIfNeeded(
+                reason: reason,
+                forceRestartPendingRestore: forceRestartPendingRestore
+            )
+        }
+
         if Self.isRestoreStalled(
             isRestoreNavigationPending: hiddenWebViewDiscardManager.isRestoreNavigationPending,
             isWebViewLoading: webView.isLoading,
