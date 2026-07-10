@@ -21,6 +21,7 @@ void cmux_chromium_go_back(void *browserHandle);
 void cmux_chromium_go_forward(void *browserHandle);
 void cmux_chromium_refresh_navigation_entries(void *browserHandle);
 void cmux_chromium_reload(void *browserHandle);
+void cmux_chromium_reload_ignore_cache(void *browserHandle);
 void cmux_chromium_stop_loading(void *browserHandle);
 void cmux_chromium_set_focus(void *browserHandle, BOOL focus);
 void cmux_chromium_set_zoom_level(void *browserHandle, double zoomLevel);

@@ -280,6 +280,12 @@ extension BrowserPanel {
         return true
     }
 
+    func chromiumHardReloadIfNeeded() -> Bool {
+        guard usesChromiumEngine, let chromiumHostView else { return false }
+        chromiumHostView.reloadIgnoringCache()
+        return true
+    }
+
     func chromiumStopLoadingIfNeeded() -> Bool {
         guard usesChromiumEngine, let chromiumHostView else { return false }
         chromiumHostView.stopLoading()
