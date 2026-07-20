@@ -58,6 +58,13 @@ extension BrowserPanel {
         forceRestartPendingRestore: Bool = false
     ) -> Bool {
         if usesChromiumEngine {
+            if Self.isQueuedRemoteRestoreInFlight(
+                isDiscardedForMemory: hiddenWebViewDiscardManager.isDiscardedForMemory,
+                hasPendingRemoteNavigation: hasPendingRemoteNavigation,
+                forceRestartPendingRestore: forceRestartPendingRestore
+            ) {
+                return true
+            }
             return restoreDiscardedChromiumWebViewIfNeeded(
                 reason: reason,
                 forceRestartPendingRestore: forceRestartPendingRestore
