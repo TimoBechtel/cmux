@@ -65,6 +65,10 @@ extension BrowserPanel {
             ) {
                 return true
             }
+            let restoreURL = restoredHistoryCurrentURL ?? currentURL
+            guard let restoreURL, !Self.isAboutBlankURL(restoreURL) else {
+                return reactivateDiscardedPaneWithoutRestorableURL(reason: reason)
+            }
             return restoreDiscardedChromiumWebViewIfNeeded(
                 reason: reason,
                 forceRestartPendingRestore: forceRestartPendingRestore

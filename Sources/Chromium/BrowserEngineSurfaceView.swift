@@ -12,6 +12,7 @@ struct BrowserEngineSurfaceView: View {
     let paneDropZone: DropZone?
     let paneOwnershipOverride: Bool?
     let searchOverlay: BrowserPortalSearchOverlayConfiguration?
+    let designComposer: BrowserPortalDesignComposerConfiguration?
     let omnibarSuggestions: BrowserPortalOmnibarSuggestionsConfiguration?
     let paneTopChromeHeight: CGFloat
 
@@ -36,6 +37,7 @@ struct BrowserEngineSurfaceView: View {
                 paneDropZone: paneDropZone,
                 paneOwnershipOverride: paneOwnershipOverride,
                 searchOverlay: searchOverlay,
+                designComposer: designComposer,
                 omnibarSuggestions: omnibarSuggestions,
                 paneTopChromeHeight: paneTopChromeHeight
             )

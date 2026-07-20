@@ -6175,6 +6175,7 @@ class TerminalController {
         guard v2MainSync({ browserPanel.usesChromiumEngine }) else {
             return v2RunBrowserJavaScript(
                 v2MainSync { browserPanel.webView },
+                browserPanel: browserPanel,
                 surfaceId: surfaceId,
                 script: script,
                 timeout: timeout,
@@ -6486,39 +6487,6 @@ class TerminalController {
         let first = queue.removeFirst()
         v2BrowserDialogQueueBySurface[surfaceId] = queue
         return first
-    }
-
-    private func v2BrowserEnsureInitScriptsApplied(surfaceId: UUID, browserPanel: BrowserPanel) {
-        let scripts = v2BrowserInitScriptsBySurface[surfaceId] ?? []
-        let styles = v2BrowserInitStylesBySurface[surfaceId] ?? []
-        guard !scripts.isEmpty || !styles.isEmpty else { return }
-
-        let injector = """
-        (() => {
-          window.__cmuxInitScriptsApplied = window.__cmuxInitScriptsApplied || { scripts: [], styles: [] };
-          return true;
-        })()
-        """
-        _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: injector)
-
-        for script in scripts {
-            _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: script)
-        }
-        for css in styles {
-            let cssLiteral = v2JSONLiteral(css)
-            let styleScript = """
-            (() => {
-              const id = 'cmux-init-style-' + btoa(unescape(encodeURIComponent(\(cssLiteral)))).replace(/=+$/g, '');
-              if (document.getElementById(id)) return true;
-              const el = document.createElement('style');
-              el.id = id;
-              el.textContent = String(\(cssLiteral));
-              (document.head || document.documentElement || document.body).appendChild(el);
-              return true;
-            })()
-            """
-            _ = v2RunBrowserJavaScript(browserPanel, surfaceId: surfaceId, script: styleScript)
-        }
     }
 
     nonisolated func v2PNGData(from image: NSImage) -> Data? {
@@ -7584,7 +7552,7 @@ class TerminalController {
                 message: "Wait condition could not be evaluated: \(message)",
                 data: [
                     "timeout_ms": timeoutMs,
-                    "url": v2MainSync { browserPanelOut.currentURL?.absoluteString ?? "about:blank" },
+                    "url": v2MainSync { browserPanel.currentURL?.absoluteString ?? "about:blank" },
                     "hint": "Verify the page loaded with 'cmux browser <surface> get url' before waiting"
                 ]
             )

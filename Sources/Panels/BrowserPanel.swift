@@ -6025,7 +6025,7 @@ final class BrowserPanel: Panel, ObservableObject {
                 chromiumView.load(url)
             }
             refreshNavigationAvailability()
-            return
+            return nil
         }
         // Some installs can end up with a legacy Chrome UA override; keep this pinned.
         webView.customUserAgent = BrowserUserAgentSettings.safariUserAgent
@@ -8578,7 +8578,6 @@ private extension BrowserPanel {
         case .failure:
             return false
         }
-    }
     }
 
     static func responderChainContains(_ start: NSResponder?, target: NSResponder) -> Bool {
